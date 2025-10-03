@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -7,6 +7,7 @@ using Content.Shared.Players;
 using Robust.Shared.Configuration;
 using Robust.Shared.GameObjects;
 using Robust.Shared.IoC;
+using Robust.Shared.Log;
 using Robust.Shared.Network;
 using Robust.Shared.Player;
 using Robust.Shared.Random;
@@ -36,7 +37,7 @@ public sealed partial class TestPair
     public int ClientSeed;
 
     public RobustIntegrationTest.ServerIntegrationInstance Server { get; private set; } = default!;
-    public RobustIntegrationTest.ClientIntegrationInstance Client { get;  private set; } = default!;
+    public RobustIntegrationTest.ClientIntegrationInstance Client { get; private set; } = default!;
 
     public void Deconstruct(
         out RobustIntegrationTest.ServerIntegrationInstance server,
@@ -50,8 +51,8 @@ public sealed partial class TestPair
 
     public ContentPlayerData? PlayerData => Player?.Data.ContentData();
 
-    public PoolTestLogHandler ServerLogHandler { get;  private set; } = default!;
-    public PoolTestLogHandler ClientLogHandler { get;  private set; } = default!;
+    public PoolTestLogHandler ServerLogHandler { get; private set; } = default!;
+    public PoolTestLogHandler ClientLogHandler { get; private set; } = default!;
 
     public TestPair(int id)
     {
@@ -74,6 +75,14 @@ public sealed partial class TestPair
 
         if (!settings.NoLoadTestPrototypes)
             await LoadPrototypes(testPrototypes!);
+
+        // Prevent info log spam in some tests (particularly SpawnAndDeleteAllEntitiesOnDifferentMaps)
+        Server.System<SharedMapSystem>().Log.Level = LogLevel.Warning;
+        Client.EntMan.EntitySysManager.SystemLoaded += (_, e) =>
+        {
+            if (e.System is SharedMapSystem map)
+                map.Log.Level = LogLevel.Warning;
+        };
 
         if (!settings.UseDummyTicker)
         {
