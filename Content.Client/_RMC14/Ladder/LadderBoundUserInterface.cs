@@ -17,8 +17,6 @@ public sealed class LadderBoundUserInterface : BoundUserInterface
 
     private SimpleRadialMenu? _menu;
 
-    private SelectionReason? _reason;
-
     private static readonly SpriteSpecifier UpIcon = new SpriteSpecifier.Rsi(new ResPath("_RMC14/Interface/radial.rsi"), "radial_up");
     private static readonly SpriteSpecifier DownIcon = new SpriteSpecifier.Rsi(new ResPath("_RMC14/Interface/radial.rsi"), "radial_down");
 
@@ -30,56 +28,53 @@ public sealed class LadderBoundUserInterface : BoundUserInterface
     protected override void Open()
     {
         base.Open();
-        EnsureWindow();
-    }
+        _menu = this.CreateWindow<SimpleRadialMenu>();
+        _menu.Track(Owner);
 
-    protected override void UpdateState(BoundUserInterfaceState state)
-    {
-        if (state is not LadderRadialBuiState ladderState)
+        if (!EntMan.TryGetComponent<LadderComponent>(Owner, out var ladderComp))
             return;
 
-        _reason = ladderState.Reason;
-        var window = EnsureWindow();
-
-        string? upTooltip = null;
-        string? downTooltip = null;
-        var actionString = _reason switch
+        if (ladderComp.Above is not { } above || ladderComp.Below is not { } below)
         {
-            SelectionReason.Climb => Loc.GetString("rmc-ladder-radial-action-climb"),
-            SelectionReason.Watch => Loc.GetString("rmc-ladder-radial-action-look"),
-            _ => null,
-        };
-        if (actionString != null)
-        {
-            upTooltip = Loc.GetString("rmc-ladder-radial-tooltip",
-                ("action", actionString),
-                ("direction", Loc.GetString("rmc-ladder-direction-up")));
-
-            downTooltip = Loc.GetString("rmc-ladder-radial-tooltip",
-                ("action", actionString),
-                ("direction", Loc.GetString("rmc-ladder-direction-down")));
+            UiSystem.Log.Error($"{EntMan.ToPrettyString(Owner)} tried to open a radial menu, but doesn't have two connected ladders! " +
+                $"(Above: {EntMan.ToPrettyString(ladderComp.Above)} | Below: {EntMan.ToPrettyString(ladderComp.Below)})");
+            return;
         }
 
+        var actionString = UiKey switch
+        {
+            LadderRadialAction.Climb => Loc.GetString("rmc-ladder-radial-action-climb"),
+            LadderRadialAction.Watch => Loc.GetString("rmc-ladder-radial-action-look"),
+            _ => throw new ArgumentOutOfRangeException(nameof(UiKey), UiKey, "Invalid ladder radial UiKey!")
+        };
+
+        var upTooltip = Loc.GetString("rmc-ladder-radial-tooltip",
+            ("action", actionString),
+            ("direction", Loc.GetString("rmc-ladder-direction-up")));
+        var downTooltip = Loc.GetString("rmc-ladder-radial-tooltip",
+            ("action", actionString),
+            ("direction", Loc.GetString("rmc-ladder-direction-down")));
+
         var buttons = new List<RadialMenuActionOption>();
-        var upButton = new RadialMenuActionOption<NetEntity>(SelectDirection, ladderState.Above)
+        var upButton = new RadialMenuActionOption<EntityUid>(SelectDirection, above)
         {
             ToolTip = upTooltip
         };
         buttons.Add(upButton);
 
-        var downButton = new RadialMenuActionOption<NetEntity>(SelectDirection, ladderState.Below)
+        var downButton = new RadialMenuActionOption<EntityUid>(SelectDirection, below)
         {
             ToolTip = downTooltip
         };
         buttons.Add(downButton);
 
-        window.SetButtons(buttons, new SimpleRadialMenuSettings()
+        _menu.SetButtons(buttons, new SimpleRadialMenuSettings()
         {
             UseSectors = false
         });
 
         // Styling override thing because `SimpleRadialMenu` doesn't let you do this in a more "normal" way.
-        foreach (var child in window.Children)
+        foreach (var child in _menu.Children)
         {
             if (child is not RadialContainer container)
                 continue;
@@ -98,6 +93,7 @@ public sealed class LadderBoundUserInterface : BoundUserInterface
         }
     }
 
+    // TODO RMC14
     // Workaround until `RadialMenuIconSpecifier` is ported from upstream.
     //
     // Basically, radial menu buttons can only have a background (added through the "RadialMenuButton" style)
@@ -128,12 +124,9 @@ public sealed class LadderBoundUserInterface : BoundUserInterface
         return _menu;
     }
 
-    private void SelectDirection(NetEntity selectedLadder)
+    private void SelectDirection(EntityUid selectedLadder)
     {
-        if (_reason is { } selectionReason)
-        {
-            var message = new LadderRadialSelectedMessage(selectedLadder, selectionReason);
-            SendPredictedMessage(message);
-        }
+        var message = new LadderRadialSelectedMessage(EntMan.GetNetEntity(selectedLadder));
+        SendPredictedMessage(message);
     }
 }

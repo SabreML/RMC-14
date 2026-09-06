@@ -25,7 +25,9 @@
   - type: RMCIgnoreGhostInteractionLimits
   - type: UserInterface
     interfaces:
-      enum.LadderRadialBuiKey.Key:
+      enum.LadderRadialAction.Climb:
+        type: LadderBoundUserInterface
+      enum.LadderRadialAction.Watch:
         type: LadderBoundUserInterface
 
 - type: entity

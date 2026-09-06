@@ -105,18 +105,18 @@ public abstract class SharedLadderSystem : EntitySystem
             return;
         }
 
-        if (SelectConnectedLadder(ent, args.User, SelectionReason.Climb) is { } connecedLadder)
+        if (SelectConnectedLadder(ent, args.User, LadderRadialAction.Climb) is { } connecedLadder)
             StartClimbing(ent, connecedLadder, args.User);
     }
 
     // Returns either the UID of the sole connected ladder, or opens a radial menu for the user to pick one and returns null.
-    private EntityUid? SelectConnectedLadder(Entity<LadderComponent> ent, EntityUid user, SelectionReason reason)
+    private EntityUid? SelectConnectedLadder(Entity<LadderComponent> ent, EntityUid user, LadderRadialAction action)
     {
         switch (ent.Comp.Above, ent.Comp.Below)
         {
             // `Above` and `Below` are both set.
             case (not null, not null):
-                OpenRadialMenu(ent, user, reason);
+                OpenRadialMenu(ent, user, action);
                 // Return null since the radial menu handles it from here.
                 return null;
             // Only `Above` is set.
@@ -132,28 +132,19 @@ public abstract class SharedLadderSystem : EntitySystem
         }
     }
 
-    private void OpenRadialMenu(Entity<LadderComponent> ent, EntityUid user, SelectionReason reason)
+    private void OpenRadialMenu(Entity<LadderComponent> ent, EntityUid user, LadderRadialAction action)
     {
-        if (!_timing.IsFirstTimePredicted)
-            return;
-        if (ent.Comp.Above is not { } above || ent.Comp.Below is not { } below)
-        {
-            Log.Error($"Ladder {ToPrettyString(ent)} tried to open a radial menu, but doesn't have two connected ladders! (Above: {ToPrettyString(ent.Comp.Above)} | Below: {ToPrettyString(ent.Comp.Below)})");
-            return;
-        }
-
-        _uiSystem.OpenUi(ent.Owner, LadderRadialBuiKey.Key, user, true);
-        _uiSystem.SetUiState(ent.Owner, LadderRadialBuiKey.Key, new LadderRadialBuiState(GetNetEntity(above), GetNetEntity(below), reason));
+        _uiSystem.OpenUi(ent.Owner, action, user, true);
     }
 
     private void OnRadialMenuSelected(Entity<LadderComponent> ent, ref LadderRadialSelectedMessage args)
     {
-        switch (args.Reason)
+        switch (args.UiKey)
         {
-            case SelectionReason.Climb:
+            case LadderRadialAction.Climb:
                 StartClimbing(ent, GetEntity(args.DestinationLadder), args.Actor);
                 break;
-            case SelectionReason.Watch:
+            case LadderRadialAction.Watch:
                 Watch(args.Actor, GetEntity(args.DestinationLadder));
                 break;
         }
@@ -286,7 +277,7 @@ public abstract class SharedLadderSystem : EntitySystem
             Act = () =>
             {
                 if (CanWatch(ent, user) &&
-                    SelectConnectedLadder(ent, user, SelectionReason.Watch) is { } otherLadder)
+                    SelectConnectedLadder(ent, user, LadderRadialAction.Watch) is { } otherLadder)
                 {
                     Watch(user, otherLadder);
                 }
@@ -319,7 +310,7 @@ public abstract class SharedLadderSystem : EntitySystem
             return;
 
         args.Handled = true;
-        if (SelectConnectedLadder(ent, user, SelectionReason.Watch) is { } otherLadder)
+        if (SelectConnectedLadder(ent, user, LadderRadialAction.Watch) is { } otherLadder)
             Watch(user, otherLadder);
     }
 
