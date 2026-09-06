@@ -114,16 +114,6 @@ public sealed class LadderBoundUserInterface : BoundUserInterface
         button.AddStyleClass("RadialMenuButton");
     }
 
-    private SimpleRadialMenu EnsureWindow()
-    {
-        if (_menu != null)
-            return _menu;
-
-        _menu ??= this.CreateWindow<SimpleRadialMenu>();
-        _menu.Track(Owner);
-        return _menu;
-    }
-
     private void SelectDirection(EntityUid selectedLadder)
     {
         var message = new LadderRadialSelectedMessage(EntMan.GetNetEntity(selectedLadder));
