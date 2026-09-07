@@ -135,6 +135,7 @@
       - !type:PopupMessage
         type: Local
         messages: [ "rmc-pain-moderate-inner" ]
+        visualType: SmallCaution
         probability: 0.1
     - threshold: 60
       levelEffects:
@@ -151,6 +152,7 @@
       - !type:PopupMessage
         type: Local
         messages: [ "rmc-pain-distressing-inner" ]
+        visualType: MediumCaution
         probability: 0.1
       - !type:Emote
         emote: PainGrimace
@@ -184,6 +186,7 @@
       - !type:PopupMessage
         type: Local
         messages: [ "rmc-pain-severe-inner" ]
+        visualType: LargeCaution
         probability: 0.1
       - !type:Emote
         emote: TroubleEyeOpen
@@ -216,6 +219,7 @@
       - !type:PopupMessage
         type: Local
         messages: [ "rmc-pain-horrible-inner" ]
+        visualType: LargeCaution
         probability: 0.1
       - !type:Emote
         emote: TroubleStanding

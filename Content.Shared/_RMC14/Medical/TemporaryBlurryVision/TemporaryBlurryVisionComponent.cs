@@ -7,28 +7,29 @@ namespace Content.Shared._RMC14.Medical.TemporaryBlurryVision;
 /// <summary>
 /// Component used for the blurry vision status effect.
 /// </summary>
+[Access(typeof(TemporaryBlurryVisionSystem))]
 [NetworkedComponent, RegisterComponent, AutoGenerateComponentState, AutoGenerateComponentPause]
 public sealed partial class TemporaryBlurryVisionComponent : Component
 {
     [DataField, AutoNetworkedField]
     public TimeSpan UpdateRate = TimeSpan.FromSeconds(1);
 
-    [DataField(customTypeSerializer: typeof(TimeOffsetSerializer)), AutoNetworkedField, Access(typeof(TemporaryBlurryVisionSystem))]
+    [DataField(customTypeSerializer: typeof(TimeOffsetSerializer)), AutoNetworkedField]
     [AutoPausedField]
     public TimeSpan NextUpdateTime = new(0);
 
-    [DataField, AutoNetworkedField, Access(typeof(TemporaryBlurryVisionSystem))]
-    public List<TemporaryBlurModificator> TemporaryBlurModificators = [];
+    [DataField, AutoNetworkedField]
+    public List<TemporaryBlurModifier> TemporaryBlurModifiers = [];
 }
 
 [DataDefinition, Serializable, NetSerializable]
-public sealed partial class TemporaryBlurModificator
+public sealed partial class TemporaryBlurModifier
 {
     [DataField(customTypeSerializer: typeof(TimeOffsetSerializer))]
     public TimeSpan ExpireAt;
     public int EffectStrength;
 
-    public TemporaryBlurModificator(TimeSpan expireAt, int strength)
+    public TemporaryBlurModifier(TimeSpan expireAt, int strength)
     {
         ExpireAt = expireAt;
         EffectStrength = strength;

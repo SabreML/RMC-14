@@ -12,13 +12,13 @@ namespace Content.Shared._RMC14.Medical.Pain;
 public sealed partial class PainComponent : Component
 {
     /// <summary>
-    /// Pain value derived from overall damage to the body without modificators.
+    /// Pain value derived from overall damage to the body without modifiers.
     /// </summary>
     [ViewVariables, AutoNetworkedField]
     public FixedPoint2 CurrentPain = FixedPoint2.Zero;
 
     /// <summary>
-    /// Pain value with all modificators and limited to 100.
+    /// Pain value with all modifiers and limited to 100.
     /// </summary>
     [ViewVariables, AutoNetworkedField]
     public FixedPoint2 CurrentPainPercentage = FixedPoint2.Zero;
@@ -41,10 +41,10 @@ public sealed partial class PainComponent : Component
     public TimeSpan NextEffectUpdateTime = new(0);
 
     [ViewVariables, Access(typeof(PainSystem)), AutoNetworkedField]
-    public List<PainModificator> PainModificators = [];
+    public List<PainModifier> PainModifiers = [];
 
     [DataField, AutoNetworkedField]
-    public FixedPoint2 PainReductionDecreaceRate = FixedPoint2.New(0.25);
+    public FixedPoint2 PainReductionDecreaseRate = FixedPoint2.New(0.25);
 
     [DataField, AutoNetworkedField]
     public FixedPoint2 BrutePainMultiplier = FixedPoint2.New(1);
@@ -66,14 +66,14 @@ public sealed partial class PainComponent : Component
 }
 
 [DataDefinition, Serializable, NetSerializable]
-public sealed partial class PainModificator
+public sealed partial class PainModifier
 {
     [DataField(customTypeSerializer: typeof(TimeOffsetSerializer))]
     public TimeSpan ExpireAt;
     public FixedPoint2 EffectStrength;
-    public PainModificatorType Type;
+    public PainModifierType Type;
 
-    public PainModificator(TimeSpan expireAt, FixedPoint2 strength, PainModificatorType type)
+    public PainModifier(TimeSpan expireAt, FixedPoint2 strength, PainModifierType type)
     {
         ExpireAt = expireAt;
         EffectStrength = strength;
@@ -84,7 +84,7 @@ public sealed partial class PainModificator
 [DataRecord]
 public record struct PainLevel(FixedPoint2 Threshold, List<EntityEffect> LevelEffects);
 
-public enum PainModificatorType : byte
+public enum PainModifierType : byte
 {
     PainReduction,
     PainIncrease,

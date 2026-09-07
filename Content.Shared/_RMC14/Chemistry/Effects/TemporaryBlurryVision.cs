@@ -2,7 +2,7 @@ using Content.Shared._RMC14.Medical.TemporaryBlurryVision;
 using Content.Shared.EntityEffects;
 using Robust.Shared.Prototypes;
 
-namespace Content.Shared._RMC14.EntityEffects.Effects;
+namespace Content.Shared._RMC14.Chemistry.Effects;
 
 public sealed partial class TemporaryBlurryVision : EntityEffect
 {
@@ -19,6 +19,6 @@ public sealed partial class TemporaryBlurryVision : EntityEffect
     {
         var scale = (args as EntityEffectReagentArgs)?.Scale ?? 1;
         var blurrySys = args.EntityManager.EntitySysManager.GetEntitySystem<TemporaryBlurryVisionSystem>();
-        blurrySys.AddTemporaryBlurModificator(args.TargetEntity, TimeSpan.FromSeconds(Time * scale.Float()), Blur);
+        blurrySys.AddTemporaryBlurModifier(args.TargetEntity, TimeSpan.FromSeconds(Time * scale.Float()), Blur);
     }
 }

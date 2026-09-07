@@ -4,6 +4,7 @@ using Content.Shared.Mobs.Components;
 using Content.Shared.StatusEffect;
 using Content.Shared.Mobs.Events;
 using Content.Shared.Rejuvenate;
+using Robust.Shared.Prototypes;
 
 namespace Content.Shared._RMC14.Medical.Pain;
 
@@ -11,10 +12,7 @@ public sealed class PainKnockOutSystem : EntitySystem
 {
     [Dependency] private readonly MobStateSystem _mobState = default!;
     [Dependency] private readonly MobThresholdSystem _mobThresholds = default!;
-
-
-    [ValidatePrototypeId<StatusEffectPrototype>]
-    private const string _painKnockOutKey = "PainKnockOut";
+    private static readonly ProtoId<StatusEffectPrototype> PainKnockOut = "PainKnockOut";
 
     public override void Initialize()
     {
@@ -31,9 +29,9 @@ public sealed class PainKnockOutSystem : EntitySystem
             return;
 
         knockout.IsAlreadySaved = true;
-        knockout.previousCritThreshold = _mobThresholds.GetThresholdForState(uid, MobState.Critical, thresholds);
+        knockout.PreviousCritThreshold = _mobThresholds.GetThresholdForState(uid, MobState.Critical, thresholds);
         var alive = _mobThresholds.GetThresholdForState(uid, MobState.Alive, thresholds);
-        knockout.previousAliveThreshold = alive;
+        knockout.PreviousAliveThreshold = alive;
         _mobThresholds.SetMobStateThreshold(uid, alive + 1, MobState.Critical, thresholds); // +1 needed to rejuvenation working propertly
         Dirty(uid, knockout);
     }
@@ -45,8 +43,8 @@ public sealed class PainKnockOutSystem : EntitySystem
             return;
 
         knockout.IsAlreadySaved = false;
-        _mobThresholds.SetMobStateThreshold(uid, knockout.previousCritThreshold, MobState.Critical, thresholds);
-        _mobThresholds.SetMobStateThreshold(uid, knockout.previousAliveThreshold, MobState.Alive, thresholds);
+        _mobThresholds.SetMobStateThreshold(uid, knockout.PreviousCritThreshold, MobState.Critical, thresholds);
+        _mobThresholds.SetMobStateThreshold(uid, knockout.PreviousAliveThreshold, MobState.Alive, thresholds);
         Dirty(uid, knockout);
     }
 
@@ -60,7 +58,7 @@ public sealed class PainKnockOutSystem : EntitySystem
 
     private void OnStatusEffectAdded(Entity<PainKnockOutComponent> ent, ref StatusEffectAddedEvent args)
     {
-        if (args.Key != _painKnockOutKey)
+        if (args.Key != PainKnockOut)
             return;
 
         if (TryComp<MobThresholdsComponent>(ent, out var thresholds))
@@ -76,7 +74,7 @@ public sealed class PainKnockOutSystem : EntitySystem
 
     private void OnStatusEffectEnded(Entity<PainKnockOutComponent> ent, ref StatusEffectEndedEvent args)
     {
-        if (args.Key != _painKnockOutKey)
+        if (args.Key != PainKnockOut)
             return;
 
         if (TryComp<MobThresholdsComponent>(ent, out var thresholds))

@@ -1,1 +1,1 @@
-reagent-effect-status-effect-PainAsphyxationDisabled = stop of asphyxation from pain
+reagent-effect-status-effect-PainAsphyxationDisabled = asphyxation from pain to stop

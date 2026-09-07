@@ -3,11 +3,11 @@ using Content.Shared.EntityEffects;
 using Robust.Shared.Prototypes;
 using Content.Shared._RMC14.Medical.Pain;
 
-namespace Content.Shared._RMC14.EntityEffects.Effects;
+namespace Content.Shared._RMC14.Chemistry.Effects;
 
 public sealed partial class DecreasePain : EntityEffect
 {
-    [DataField]
+    [DataField(required: true)]
     public FixedPoint2 Strength;
 
     [DataField]
@@ -18,7 +18,7 @@ public sealed partial class DecreasePain : EntityEffect
         var scale = (args as EntityEffectReagentArgs)?.Scale ?? 1;
         var painSystem = args.EntityManager.EntitySysManager.GetEntitySystem<PainSystem>();
         if (args.EntityManager.TryGetComponent(args.TargetEntity, out PainComponent? pain))
-            painSystem.AddPainModificator(args.TargetEntity, TimeSpan.FromSeconds(StatusLifeTime * scale.Float()), Strength, PainModificatorType.PainReduction, pain);
+            painSystem.AddPainModifier(args.TargetEntity, TimeSpan.FromSeconds(StatusLifeTime * scale.Float()), Strength, PainModifierType.PainReduction, pain);
     }
 
     protected override string? ReagentEffectGuidebookText(IPrototypeManager prototype, IEntitySystemManager entSys)
