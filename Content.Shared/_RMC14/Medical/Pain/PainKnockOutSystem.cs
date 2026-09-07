@@ -2,8 +2,6 @@ using Content.Shared.Mobs;
 using Content.Shared.Mobs.Systems;
 using Content.Shared.Mobs.Components;
 using Content.Shared.StatusEffect;
-using Content.Shared.Mobs.Events;
-using Content.Shared.Rejuvenate;
 using Robust.Shared.Prototypes;
 
 namespace Content.Shared._RMC14.Medical.Pain;
@@ -23,36 +21,36 @@ public sealed class PainKnockOutSystem : EntitySystem
     }
 
     // temporarily making the Alive state unavailable, we save the previous Critical threshold to the PainKnockOutComponent
-    private void BlockAliveState(EntityUid uid, PainKnockOutComponent knockout, MobThresholdsComponent thresholds)
+    private void BlockAliveState(Entity<PainKnockOutComponent> ent, MobThresholdsComponent thresholds)
     {
-        if (knockout.IsAlreadySaved)
+        if (ent.Comp.IsAlreadySaved)
             return;
 
-        knockout.IsAlreadySaved = true;
-        knockout.PreviousCritThreshold = _mobThresholds.GetThresholdForState(uid, MobState.Critical, thresholds);
-        var alive = _mobThresholds.GetThresholdForState(uid, MobState.Alive, thresholds);
-        knockout.PreviousAliveThreshold = alive;
-        _mobThresholds.SetMobStateThreshold(uid, alive + 1, MobState.Critical, thresholds); // +1 needed to rejuvenation working propertly
-        Dirty(uid, knockout);
+        ent.Comp.IsAlreadySaved = true;
+        ent.Comp.PreviousCritThreshold = _mobThresholds.GetThresholdForState(ent, MobState.Critical, thresholds);
+        var alive = _mobThresholds.GetThresholdForState(ent, MobState.Alive, thresholds);
+        ent.Comp.PreviousAliveThreshold = alive;
+        _mobThresholds.SetMobStateThreshold(ent, alive + 1, MobState.Critical, thresholds); // +1 needed to rejuvenation working propertly
+        Dirty(ent);
     }
 
     // make Alive state available again
-    private void EnableAliveState(EntityUid uid, PainKnockOutComponent knockout, MobThresholdsComponent thresholds)
+    private void EnableAliveState(Entity<PainKnockOutComponent> ent, MobThresholdsComponent thresholds)
     {
-        if (!knockout.IsAlreadySaved)
+        if (!ent.Comp.IsAlreadySaved)
             return;
 
-        knockout.IsAlreadySaved = false;
-        _mobThresholds.SetMobStateThreshold(uid, knockout.PreviousCritThreshold, MobState.Critical, thresholds);
-        _mobThresholds.SetMobStateThreshold(uid, knockout.PreviousAliveThreshold, MobState.Alive, thresholds);
-        Dirty(uid, knockout);
+        ent.Comp.IsAlreadySaved = false;
+        _mobThresholds.SetMobStateThreshold(ent, ent.Comp.PreviousCritThreshold, MobState.Critical, thresholds);
+        _mobThresholds.SetMobStateThreshold(ent, ent.Comp.PreviousAliveThreshold, MobState.Alive, thresholds);
+        Dirty(ent);
     }
 
-    private void OnComponentRemove(EntityUid uid, PainKnockOutComponent knockout, ref ComponentRemove args)
+    private void OnComponentRemove(Entity<PainKnockOutComponent> ent, ref ComponentRemove args)
     {
-        if (TryComp<MobThresholdsComponent>(uid, out var thresholds))
+        if (TryComp<MobThresholdsComponent>(ent, out var thresholds))
         {
-            EnableAliveState(uid, knockout, thresholds);
+            EnableAliveState(ent, thresholds);
         }
     }
 
@@ -63,7 +61,7 @@ public sealed class PainKnockOutSystem : EntitySystem
 
         if (TryComp<MobThresholdsComponent>(ent, out var thresholds))
         {
-            BlockAliveState(ent.Owner, ent.Comp, thresholds);
+            BlockAliveState(ent, thresholds);
         }
 
         if (TryComp<MobStateComponent>(ent, out var state) && state.CurrentState != MobState.Dead)
@@ -79,7 +77,7 @@ public sealed class PainKnockOutSystem : EntitySystem
 
         if (TryComp<MobThresholdsComponent>(ent, out var thresholds))
         {
-            EnableAliveState(ent.Owner, ent.Comp, thresholds);
+            EnableAliveState(ent, thresholds);
         }
 
         if (TryComp<MobStateComponent>(ent, out var state))

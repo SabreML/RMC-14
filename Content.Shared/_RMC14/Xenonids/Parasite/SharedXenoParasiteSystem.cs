@@ -781,8 +781,6 @@ public abstract partial class SharedXenoParasiteSystem : EntitySystem
                 RefreshIncubationMultipliers(uid);
             }
 
-            var victimPainComp = CompOrNull<PainComponent>(uid);
-
             // Warn on the last to final stage of a burst
             if (!infected.DidBurstWarning && stage == infected.BurstWarningStart)
             {
@@ -790,7 +788,7 @@ public abstract partial class SharedXenoParasiteSystem : EntitySystem
 
                 var knockdownTime = infected.BaseKnockdownTime * 75;
                 InfectionShakes(uid, infected, knockdownTime, infected.JitterTime, false);
-                _pain.AddPainModifier(uid, knockdownTime, infected.StrongChestBurstPain, PainModifierType.PainIncrease, victimPainComp);
+                _pain.AddPainModifier(uid, knockdownTime, infected.StrongChestBurstPain, PainModifierType.PainIncrease);
                 infected.DidBurstWarning = true;
 
                 continue;
@@ -817,7 +815,7 @@ public abstract partial class SharedXenoParasiteSystem : EntitySystem
                 {
                     var message = Loc.GetString("rmc-xeno-infection-majorpain-" + _random.Pick(new List<string> { "chest", "breathing", "heart" }));
                     _popup.PopupEntity(message, uid, uid, PopupType.SmallCaution);
-                    _pain.AddPainModifier(uid, infected.BaseKnockdownTime * 4, infected.WeakChestBurstPain, PainModifierType.PainIncrease, victimPainComp);
+                    _pain.AddPainModifier(uid, infected.BaseKnockdownTime * 4, infected.WeakChestBurstPain, PainModifierType.PainIncrease);
                     if (_random.Prob(0.5f))
                     {
                         var ev = new VictimInfectedEmoteEvent(infected.ScreamId);
@@ -828,7 +826,7 @@ public abstract partial class SharedXenoParasiteSystem : EntitySystem
                 if (_random.Prob(infected.ShakesChance * frameTime))
                 {
                     InfectionShakes(uid, infected, infected.BaseKnockdownTime * 4, infected.JitterTime * 4);
-                    _pain.AddPainModifier(uid, infected.BaseKnockdownTime * 4, infected.WeakChestBurstPain, PainModifierType.PainIncrease, victimPainComp);
+                    _pain.AddPainModifier(uid, infected.BaseKnockdownTime * 4, infected.WeakChestBurstPain, PainModifierType.PainIncrease);
                 }
             }
             else if (stage >= infected.MiddlingSymptomsStart)
@@ -855,7 +853,7 @@ public abstract partial class SharedXenoParasiteSystem : EntitySystem
                 if (_random.Prob(infected.ShakesChance * 5 / 6 * frameTime))
                 {
                     InfectionShakes(uid, infected, infected.BaseKnockdownTime * 2, infected.JitterTime * 2);
-                    _pain.AddPainModifier(uid, infected.BaseKnockdownTime * 2, infected.WeakChestBurstPain, PainModifierType.PainIncrease, victimPainComp);
+                    _pain.AddPainModifier(uid, infected.BaseKnockdownTime * 2, infected.WeakChestBurstPain, PainModifierType.PainIncrease);
                 }
             }
             else if (stage >= infected.InitialSymptomsStart)
@@ -869,7 +867,7 @@ public abstract partial class SharedXenoParasiteSystem : EntitySystem
                 if (_random.Prob((infected.ShakesChance * 2 / 3) * frameTime))
                 {
                     InfectionShakes(uid, infected, infected.BaseKnockdownTime, infected.JitterTime);
-                    _pain.AddPainModifier(uid, infected.BaseKnockdownTime, infected.WeakChestBurstPain, PainModifierType.PainIncrease, victimPainComp);
+                    _pain.AddPainModifier(uid, infected.BaseKnockdownTime, infected.WeakChestBurstPain, PainModifierType.PainIncrease);
                 }
             }
         }

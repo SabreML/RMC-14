@@ -29,7 +29,7 @@ public sealed partial class Painkilling : RMCChemicalEffect
     {
         var painSystem = args.EntityManager.EntitySysManager.GetEntitySystem<PainSystem>();
         if (args.EntityManager.TryGetComponent(args.TargetEntity, out PainComponent? pain))
-            painSystem.AddPainModifier(args.TargetEntity, TimeSpan.FromSeconds(args.Scale.Float()), ActualPotency * 40, PainModifierType.PainReduction, pain);
+            painSystem.AddPainModifier((args.TargetEntity, pain), TimeSpan.FromSeconds(args.Scale.Float()), ActualPotency * 40, PainModifierType.PainReduction);
     }
 
     // TODO: opiate receptor deficiency

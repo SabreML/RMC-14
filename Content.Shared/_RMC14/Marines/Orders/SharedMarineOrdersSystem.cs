@@ -195,7 +195,7 @@ public abstract class SharedMarineOrdersSystem : EntitySystem
         comp.Received.Sort((a, b) => a.CompareTo(b));
 
         if (comp is HoldOrderComponent hold && TryComp<PainComponent>(receiver, out var pain))
-            _pain.AddPainModifier(receiver, duration, hold.PainModifier * multiplier, PainModifierType.PainReduction, pain);
+            _pain.AddPainModifier((receiver, pain), duration, hold.PainModifier * multiplier, PainModifierType.PainReduction);
 
         _movementSpeed.RefreshMovementSpeedModifiers(receiver);
         _evasionSystem.RefreshEvasionModifiers(receiver);

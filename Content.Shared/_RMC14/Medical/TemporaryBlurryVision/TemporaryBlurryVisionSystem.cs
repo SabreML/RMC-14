@@ -1,6 +1,5 @@
 using Content.Shared.Eye.Blinding.Systems;
 using Content.Shared.Rejuvenate;
-using Content.Shared.StatusEffect;
 using Robust.Shared.Timing;
 using System.Linq;
 
@@ -17,32 +16,33 @@ public sealed class TemporaryBlurryVisionSystem : EntitySystem
         SubscribeLocalEvent<TemporaryBlurryVisionComponent, RejuvenateEvent>(OnRejuvenate);
     }
 
-    public void AddTemporaryBlurModifier(EntityUid uid, TimeSpan duration, int strength, TemporaryBlurryVisionComponent? blur = null)
+    public void AddTemporaryBlurModifier(Entity<TemporaryBlurryVisionComponent?> ent, TimeSpan duration, int strength)
     {
         var mod = new TemporaryBlurModifier(duration + _timing.CurTime, strength);
-        AddTemporaryBlurModifier(uid, mod, blur);
-    }
-    public void AddTemporaryBlurModifier(EntityUid uid, TemporaryBlurModifier mod, TemporaryBlurryVisionComponent? blur = null)
-    {
-        blur = EnsureComp<TemporaryBlurryVisionComponent>(uid);
-
-        blur.TemporaryBlurModifiers.Add(mod);
-        _blur.UpdateBlurMagnitude(uid);
-        Dirty(uid, blur);
+        AddTemporaryBlurModifier(ent, mod);
     }
 
-    private void OnGetBlur(EntityUid uid, TemporaryBlurryVisionComponent comp, ref GetBlurEvent args)
+    public void AddTemporaryBlurModifier(Entity<TemporaryBlurryVisionComponent?> ent, TemporaryBlurModifier mod)
     {
-        if (comp.TemporaryBlurModifiers.Count == 0)
+        ent.Comp = EnsureComp<TemporaryBlurryVisionComponent>(ent);
+        ent.Comp.TemporaryBlurModifiers.Add(mod);
+        Dirty(ent, ent.Comp);
+
+        _blur.UpdateBlurMagnitude(ent.Owner);
+    }
+
+    private void OnGetBlur(Entity<TemporaryBlurryVisionComponent> ent, ref GetBlurEvent args)
+    {
+        if (ent.Comp.TemporaryBlurModifiers.Count == 0)
             return;
 
-        args.Blur = comp.TemporaryBlurModifiers.Max(mod => mod.EffectStrength);
+        args.Blur = ent.Comp.TemporaryBlurModifiers.Max(mod => mod.EffectStrength);
     }
 
-    private void OnRejuvenate(EntityUid uid, TemporaryBlurryVisionComponent comp, ref RejuvenateEvent args)
+    private void OnRejuvenate(Entity<TemporaryBlurryVisionComponent> ent, ref RejuvenateEvent args)
     {
-        RemComp<TemporaryBlurryVisionComponent>(uid);
-        _blur.UpdateBlurMagnitude(uid);
+        RemComp<TemporaryBlurryVisionComponent>(ent);
+        _blur.UpdateBlurMagnitude(ent.Owner);
     }
 
     public override void Update(float frameTime)

@@ -34,97 +34,102 @@ public sealed partial class PainSystem : EntitySystem
     }
 
     // TODO: fix movement speed effect
-    private void OnRejuvenate(EntityUid uid, PainComponent pain, ref RejuvenateEvent args)
+    private void OnRejuvenate(Entity<PainComponent> ent, ref RejuvenateEvent args)
     {
+        var pain = ent.Comp;
         pain.PainModifiers = [];
         pain.CurrentPain = 0;
         pain.CurrentPainPercentage = 0;
         pain.CurrentPainLevel = 0;
-        _alerts.ShowAlert(uid, pain.Alert, 0);
+        Dirty(ent);
+
+        _alerts.ShowAlert(ent, pain.Alert, 0);
     }
 
-    private void OnAlertSeverityCheck(EntityUid uid, PainComponent pain, ref BeforeAlertSeverityCheckEvent args)
+    private void OnAlertSeverityCheck(Entity<PainComponent> ent, ref BeforeAlertSeverityCheckEvent args)
     {
-        if (args.CurrentAlert == pain.Alert)
+        if (args.CurrentAlert == ent.Comp.Alert)
         {
-            args.Severity = Math.Min((short)pain.CurrentPainLevel, _alerts.GetMaxSeverity(pain.Alert));
+            args.Severity = Math.Min((short)ent.Comp.CurrentPainLevel, _alerts.GetMaxSeverity(ent.Comp.Alert));
             args.CancelUpdate = true;
         }
     }
 
-    private void OnDamageChanged(EntityUid uid, PainComponent comp, ref DamageChangedEvent args)
+    private void OnDamageChanged(Entity<PainComponent> ent, ref DamageChangedEvent args)
     {
-        UpdateCurrentPain(uid, comp, args.Damageable.Damage);
+        UpdateCurrentPain(ent, args.Damageable.Damage);
     }
 
-    public void TryChangePainLevelTo(EntityUid uid, int level, PainComponent? pain = null)
+    public void TryChangePainLevelTo(Entity<PainComponent?> ent, int level)
     {
-        if (!Resolve(uid, ref pain))
+        if (!Resolve(ent, ref ent.Comp))
+            return;
+        var painComp = ent.Comp;
+
+        if (painComp.NextPainLevelUpdateTime > _timing.CurTime)
             return;
 
-        if (pain.NextPainLevelUpdateTime > _timing.CurTime)
-            return;
-
-        pain.NextPainLevelUpdateTime = _timing.CurTime + pain.PainLevelUpdateRate;
+        painComp.NextPainLevelUpdateTime = _timing.CurTime + painComp.PainLevelUpdateRate;
 
         // `CompareTo()` returns either 1, 0, or -1, so this modifies it one step at a time.
-        pain.CurrentPainLevel += level.CompareTo(pain.CurrentPainLevel);
+        painComp.CurrentPainLevel += level.CompareTo(painComp.CurrentPainLevel);
 
-        DirtyField(uid, pain, nameof(PainComponent.CurrentPainLevel));
-        DirtyField(uid, pain, nameof(PainComponent.NextPainLevelUpdateTime));
+        DirtyField(ent, ent.Comp, nameof(PainComponent.CurrentPainLevel));
+        DirtyField(ent, ent.Comp, nameof(PainComponent.NextPainLevelUpdateTime));
 
-        if (pain.CurrentPainLevel <= _alerts.GetMaxSeverity(pain.Alert))
-            _alerts.ShowAlert(uid, pain.Alert, (short)pain.CurrentPainLevel);
+        if (painComp.CurrentPainLevel <= _alerts.GetMaxSeverity(painComp.Alert))
+            _alerts.ShowAlert(ent, painComp.Alert, (short)painComp.CurrentPainLevel);
     }
-    public void AddPainModifier(EntityUid uid, TimeSpan duration, FixedPoint2 effectStrength, PainModifierType type, PainComponent? pain = null)
+    public void AddPainModifier(Entity<PainComponent?> ent, TimeSpan duration, FixedPoint2 effectStrength, PainModifierType type)
     {
         var expireAt = _timing.CurTime + duration;
         var mod = new PainModifier(expireAt, effectStrength, type);
-        AddPainModifier(uid, mod, pain);
+        AddPainModifier(ent, mod);
     }
 
-    public void AddPainModifier(EntityUid uid, PainModifier mod, PainComponent? pain = null)
+    public void AddPainModifier(Entity<PainComponent?> ent, PainModifier mod)
     {
-        if (!Resolve(uid, ref pain))
+        if (!Resolve(ent, ref ent.Comp, false))
             return;
 
-        pain.PainModifiers.Add(mod);
-        UpdateCurrentPainPercentage(uid, pain);
-        DirtyField(uid, pain, nameof(PainComponent.PainModifiers));
+        ent.Comp.PainModifiers.Add(mod);
+        UpdateCurrentPainPercentage((ent, ent.Comp));
+        DirtyField(ent, ent.Comp, nameof(PainComponent.PainModifiers));
     }
 
-    private void UpdateCurrentPainPercentage(EntityUid uid, PainComponent comp)
+    private void UpdateCurrentPainPercentage(Entity<PainComponent> ent)
     {
         var maxPainReductionModificatorStrength = FixedPoint2.Zero;
         var painIncrease = FixedPoint2.Zero;
-        var painIncreases = comp.PainModifiers.Where(mod => mod.Type == PainModifierType.PainIncrease);
-        var painReductions = comp.PainModifiers.Where(mod => mod.Type == PainModifierType.PainReduction);
+        var painIncreases = ent.Comp.PainModifiers.Where(mod => mod.Type == PainModifierType.PainIncrease);
+        var painReductions = ent.Comp.PainModifiers.Where(mod => mod.Type == PainModifierType.PainReduction);
         // get max pain reduction, sum pain increase
         if (painIncreases.Any())
             painIncrease = painIncreases.Select(mod => mod.EffectStrength).Sum();
         if (painReductions.Any())
             maxPainReductionModificatorStrength = painReductions.Max(mod => mod.EffectStrength);
 
-        var realCurrentPain = comp.CurrentPain + painIncrease;
-        // Pain reduction effectiveness linear decreases as the pain goes up
-        var newPainReduction = FixedPoint2.Max(0, -realCurrentPain * comp.PainReductionDecreaseRate + maxPainReductionModificatorStrength);
-        comp.CurrentPainPercentage = FixedPoint2.Clamp(realCurrentPain - newPainReduction, 0, 100);
-        DirtyField(uid, comp, nameof(PainComponent.CurrentPainPercentage));
+        var realCurrentPain = ent.Comp.CurrentPain + painIncrease;
+        // Pain reduction effectiveness linearly decreases as the pain goes up
+        var newPainReduction = FixedPoint2.Max(0, -realCurrentPain * ent.Comp.PainReductionDecreaseRate + maxPainReductionModificatorStrength);
+        ent.Comp.CurrentPainPercentage = FixedPoint2.Clamp(realCurrentPain - newPainReduction, 0, 100);
+        DirtyField(ent, ent.Comp, nameof(PainComponent.CurrentPainPercentage));
     }
 
-    private void UpdateCurrentPain(EntityUid uid, PainComponent comp, DamageSpecifier damage)
+    private void UpdateCurrentPain(Entity<PainComponent> ent, DamageSpecifier damage)
     {
+        var painComp = ent.Comp;
         var newCurrentPain = FixedPoint2.Zero;
 
-        newCurrentPain += GetDamageGroupPain(damage, BruteGroup, comp.BrutePainMultiplier);
-        newCurrentPain += GetDamageGroupPain(damage, BurnGroup, comp.BurnPainMultiplier);
-        newCurrentPain += GetDamageGroupPain(damage, ToxinGroup, comp.ToxinPainMultiplier);
-        newCurrentPain += GetDamageGroupPain(damage, AirlossGroup, comp.AirlossPainMultiplier);
+        newCurrentPain += GetDamageGroupPain(damage, BruteGroup, painComp.BrutePainMultiplier);
+        newCurrentPain += GetDamageGroupPain(damage, BurnGroup, painComp.BurnPainMultiplier);
+        newCurrentPain += GetDamageGroupPain(damage, ToxinGroup, painComp.ToxinPainMultiplier);
+        newCurrentPain += GetDamageGroupPain(damage, AirlossGroup, painComp.AirlossPainMultiplier);
 
-        if (comp.CurrentPain != newCurrentPain)
+        if (painComp.CurrentPain != newCurrentPain)
         {
-            comp.CurrentPain = newCurrentPain;
-            DirtyField(uid, comp, nameof(PainComponent.CurrentPain));
+            painComp.CurrentPain = newCurrentPain;
+            DirtyField(ent, ent.Comp, nameof(PainComponent.CurrentPain));
         }
     }
 
@@ -157,7 +162,7 @@ public sealed partial class PainSystem : EntitySystem
             if (pain.PainModifiers.RemoveAll(mod => time > mod.ExpireAt) != 0)
                 DirtyField(uid, pain, nameof(PainComponent.PainModifiers));
 
-            UpdateCurrentPainPercentage(uid, pain);
+            UpdateCurrentPainPercentage((uid, pain));
 
             var painLevels = pain.PainLevels.OrderBy(level => level.Threshold).ToList(); // in case someone writes it in the wrong order
             var updatePainLevel = false;
@@ -179,7 +184,7 @@ public sealed partial class PainSystem : EntitySystem
             if (!updatePainLevel)
                 continue;
 
-            TryChangePainLevelTo(uid, expectedPainLevel, pain);
+            TryChangePainLevelTo((uid, pain), expectedPainLevel);
 
             if (painLevels.Count == 0)
                 continue;
