@@ -12,33 +12,43 @@ namespace Content.Shared._RMC14.Medical.Pain;
 public sealed partial class PainComponent : Component
 {
     /// <summary>
-    /// Pain value derived from overall damage to the body without modifiers.
+    /// Base pain value derived from overall damage to the body, without accounting for any <see cref="PainModifiers"/>.
     /// </summary>
     [ViewVariables, AutoNetworkedField]
     public FixedPoint2 CurrentPain = FixedPoint2.Zero;
 
     /// <summary>
-    /// Pain value with all modifiers and limited to 100.
+    /// 0 to 100 value representing how much pain the player actually feels after applying any <see cref="PainModifiers"/> like painkillers.
     /// </summary>
     [ViewVariables, AutoNetworkedField]
     public FixedPoint2 CurrentPainPercentage = FixedPoint2.Zero;
 
+    /// <summary>
+    /// Current index in the <see cref="PainLevels"/> list.
+    /// This is set based on the highest <see cref="PainLevel.Threshold"/> passed by <see cref="CurrentPainPercentage"/>.
+    /// </summary>
     [ViewVariables, AutoNetworkedField]
     public int CurrentPainLevel = 0;
 
+    /// <summary>
+    /// Time between each update of this component in <see cref="PainSystem.Update(float)"/>.
+    /// </summary>
+    [DataField, AutoNetworkedField]
+    public TimeSpan UpdateRate = TimeSpan.FromSeconds(1);
+
+    [DataField(customTypeSerializer: typeof(TimeOffsetSerializer)), AutoNetworkedField]
+    [AutoPausedField]
+    public TimeSpan NextUpdateTime = new(0);
+
+    /// <summary>
+    /// Time between each update of <see cref="CurrentPainLevel"/>.
+    /// </summary>
     [DataField, AutoNetworkedField]
     public TimeSpan PainLevelUpdateRate = TimeSpan.FromSeconds(2);
 
     [DataField(customTypeSerializer: typeof(TimeOffsetSerializer)), AutoNetworkedField]
     [AutoPausedField]
     public TimeSpan NextPainLevelUpdateTime = new(0);
-
-    [DataField, AutoNetworkedField]
-    public TimeSpan EffectUpdateRate = TimeSpan.FromSeconds(1);
-
-    [DataField(customTypeSerializer: typeof(TimeOffsetSerializer)), AutoNetworkedField]
-    [AutoPausedField]
-    public TimeSpan NextEffectUpdateTime = new(0);
 
     [ViewVariables, Access(typeof(PainSystem)), AutoNetworkedField]
     public List<PainModifier> PainModifiers = [];
