@@ -201,6 +201,7 @@
 - type: entity
   parent: CMPill
   id: CMPillTramadol
+  suffix: Tramadol, 15u
   components:
   - type: SolutionContainerManager
     solutions:
@@ -219,6 +220,7 @@
 - type: entity
   parent: CMPill
   id: CMPillOxycodone
+  suffix: Oxycodone, 15u
   components:
   - type: SolutionContainerManager
     solutions:

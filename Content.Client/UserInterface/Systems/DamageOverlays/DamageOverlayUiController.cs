@@ -1,3 +1,4 @@
+using Content.Shared._RMC14.Medical.Pain;
 using Content.Shared.Damage;
 using Content.Shared.FixedPoint;
 using Content.Shared.Mobs;
@@ -29,6 +30,7 @@ public sealed class DamageOverlayUiController : UIController
         SubscribeLocalEvent<LocalPlayerDetachedEvent>(OnPlayerDetached);
         SubscribeLocalEvent<MobStateChangedEvent>(OnMobStateChanged);
         SubscribeLocalEvent<MobThresholdChecked>(OnThresholdCheck);
+        SubscribeNetworkEvent<PainLevelChangedEvent>(OnPainLevelChanged); // RMC14
     }
 
     private void OnPlayerAttach(LocalPlayerAttachedEvent args)
@@ -62,6 +64,20 @@ public sealed class DamageOverlayUiController : UIController
             return;
         UpdateOverlays(args.Target, args.MobState, args.Damageable, args.Threshold);
     }
+
+    // RMC14
+    private void OnPainLevelChanged(PainLevelChangedEvent msg, EntitySessionEventArgs args)
+    {
+        if (args.SenderSession != _playerManager.LocalSession)
+            return;
+        // Only update from here if the level is decreasing. (e.g. painkillers)
+        // Pain *increasing* is covered by the other events already.
+        if (msg.NewLevel > msg.OldLevel)
+            return;
+
+        UpdateOverlays(EntityManager.GetEntity(msg.Target), null);
+    }
+    // RMC14
 
     private void ClearOverlay()
     {
@@ -98,7 +114,13 @@ public sealed class DamageOverlayUiController : UIController
                 FixedPoint2 painLevel = 0;
                 _overlay.PainLevel = 0;
 
-                if (!EntityManager.HasComponent<PainNumbnessComponent>(entity))
+                // RMC14 Start
+                if (EntityManager.TryGetComponent<PainComponent>(entity, out var painComp))
+                {
+                    var newPainLevel = (painComp.CurrentPainPercentage / 100).Float();
+                    _overlay.PainLevel = newPainLevel < 0.05f ? 0 : newPainLevel; // Don't show damage overlay if they're near enough to max.
+                    }
+                else if (!EntityManager.HasComponent<PainNumbnessComponent>(entity)) // RMC14 End
                 {
                     foreach (var painDamageType in damageable.PainDamageGroups)
                     {

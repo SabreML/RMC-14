@@ -18,7 +18,7 @@ public sealed partial class PainComponent : Component
     public FixedPoint2 CurrentPain = FixedPoint2.Zero;
 
     /// <summary>
-    /// 0 to 100 value representing how much pain the player actually feels after applying any <see cref="PainModifiers"/> like painkillers.
+    /// 0 to 100 value representing how much pain the player actually <i>feels</i> after applying any <see cref="PainModifiers"/> like painkillers.
     /// </summary>
     [ViewVariables, AutoNetworkedField]
     public FixedPoint2 CurrentPainPercentage = FixedPoint2.Zero;
@@ -29,6 +29,18 @@ public sealed partial class PainComponent : Component
     /// </summary>
     [ViewVariables, AutoNetworkedField]
     public int CurrentPainLevel = 0;
+
+    /// <summary>
+    /// List of currently active <see cref="PainModifier"/>s, either increasing or decreasing the amount
+    /// that <see cref="CurrentPain"/> is actually felt by the player in <see cref="CurrentPainPercentage"/>.
+    /// </summary>
+    /// <remarks>
+    /// Due to painkiller <see cref="EntityEffect"/>s not being predictable, the values of any
+    /// <see cref="PainModifier"/>s caused by them may be out of sync on Client-side. <see cref="PainModifier.ExpireAt"/> in particular.
+    /// </remarks>
+    /// <seealso cref="PainSystem.UpdateCurrentPainPercentage(Entity{PainComponent})"/>
+    [ViewVariables, Access(typeof(PainSystem)), AutoNetworkedField]
+    public List<PainModifier> PainModifiers = [];
 
     /// <summary>
     /// Time between each update of this component in <see cref="PainSystem.Update(float)"/>.
@@ -50,9 +62,6 @@ public sealed partial class PainComponent : Component
     [AutoPausedField]
     public TimeSpan NextPainLevelUpdateTime = new(0);
 
-    [ViewVariables, Access(typeof(PainSystem)), AutoNetworkedField]
-    public List<PainModifier> PainModifiers = [];
-
     [DataField, AutoNetworkedField]
     public FixedPoint2 PainReductionDecreaseRate = FixedPoint2.New(0.25);
 
@@ -68,11 +77,19 @@ public sealed partial class PainComponent : Component
     [DataField, AutoNetworkedField]
     public FixedPoint2 AirlossPainMultiplier = FixedPoint2.Zero;
 
-    [DataField(required: true, serverOnly: true)]
-    public List<PainLevel> PainLevels = [];
-
     [DataField, AutoNetworkedField]
     public ProtoId<AlertPrototype> Alert = "HumanoidPainHealth";
+
+    /// <summary>
+    /// List of <see cref="PainLevel"/>s structs, each containing its own list of <see cref="EntityEffect"/>s to be triggered when
+    /// <see cref="CurrentPainPercentage"/> passes their <see cref="PainLevel.Threshold"/>. <br/>
+    /// Only one <see cref="PainLevel"/> can be active at a time, with the currently active level indicated by its index in <see cref="CurrentPainLevel"/>.
+    /// </summary>
+    /// <remarks>
+    /// Server-side only due to the <see cref="EntityEffect"/>s in <see cref="PainLevel.LevelEffects"/> not being serializable.
+    /// </remarks>
+    [DataField(required: true, serverOnly: true)]
+    public List<PainLevel> PainLevels = [];
 }
 
 [DataDefinition, Serializable, NetSerializable]
@@ -80,7 +97,11 @@ public sealed partial class PainModifier
 {
     [DataField(customTypeSerializer: typeof(TimeOffsetSerializer))]
     public TimeSpan ExpireAt;
+
+    [DataField]
     public FixedPoint2 EffectStrength;
+
+    [DataField]
     public PainModifierType Type;
 
     public PainModifier(TimeSpan expireAt, FixedPoint2 strength, PainModifierType type)
@@ -94,6 +115,7 @@ public sealed partial class PainModifier
 [DataRecord]
 public record struct PainLevel(FixedPoint2 Threshold, List<EntityEffect> LevelEffects);
 
+[Serializable, NetSerializable]
 public enum PainModifierType : byte
 {
     PainReduction,

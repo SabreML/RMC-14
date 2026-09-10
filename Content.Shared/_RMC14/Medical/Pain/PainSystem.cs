@@ -46,11 +46,15 @@ public sealed partial class PainSystem : EntitySystem
     private void OnRejuvenate(Entity<PainComponent> ent, ref RejuvenateEvent args)
     {
         var pain = ent.Comp;
+        var oldPainLevel = pain.CurrentPainLevel;
         pain.PainModifiers = [];
         pain.CurrentPain = 0;
         pain.CurrentPainPercentage = 0;
         pain.CurrentPainLevel = 0;
         Dirty(ent);
+
+        // Update the pain/damage screen overlay.
+        RaiseNetworkEvent(new PainLevelChangedEvent(GetNetEntity(ent), oldPainLevel, pain.CurrentPainLevel));
 
         _alerts.ShowAlert(ent, pain.Alert, 0);
     }
@@ -107,7 +111,6 @@ public sealed partial class PainSystem : EntitySystem
     {
         var maxPainReductionModifierStrength = FixedPoint2.Zero;
         var painIncrease = FixedPoint2.Zero;
-
         foreach (var modifier in ent.Comp.PainModifiers)
         {
             switch (modifier.Type)
@@ -124,22 +127,33 @@ public sealed partial class PainSystem : EntitySystem
         var realCurrentPain = ent.Comp.CurrentPain + painIncrease;
         // Pain reduction effectiveness linearly decreases as the pain goes up
         var newPainReduction = FixedPoint2.Max(0, -realCurrentPain * ent.Comp.PainReductionDecreaseRate + maxPainReductionModifierStrength);
-        ent.Comp.CurrentPainPercentage = FixedPoint2.Clamp(realCurrentPain - newPainReduction, 0, 100);
-        DirtyField(ent, ent.Comp, nameof(PainComponent.CurrentPainPercentage));
+        var newPainPercentage = FixedPoint2.Clamp(realCurrentPain - newPainReduction, 0, 100);
+
+        if (newPainPercentage != ent.Comp.CurrentPainPercentage)
+        {
+            ent.Comp.CurrentPainPercentage = newPainPercentage;
+            DirtyField(ent, ent.Comp, nameof(PainComponent.CurrentPainPercentage));
+        }
     }
 
     public void UpdateCurrentPainLevel(Entity<PainComponent?> ent, int level)
     {
-        if (!Resolve(ent, ref ent.Comp))
+        if (!_net.IsServer || !Resolve(ent, ref ent.Comp))
             return;
         var painComp = ent.Comp;
 
-        if (level == ent.Comp.CurrentPainLevel)
+        if (level == painComp.CurrentPainLevel)
             return;
 
+        var oldLevel = painComp.CurrentPainLevel;
         // `CompareTo()` returns either 1, 0, or -1, so this modifies it one step at a time.
         painComp.CurrentPainLevel += level.CompareTo(painComp.CurrentPainLevel);
         DirtyField(ent, ent.Comp, nameof(PainComponent.CurrentPainLevel));
+
+        // Because `EntityEffect` is (currently) unable to be be serialized, only the server can
+        // actually see `PainLevels` and set `CurrentPainLevel` properly depending on its thresholds.
+        // In order to make the client-side damage vignette change based on the user's pain, this needs to be sent over the network manually.
+        RaiseNetworkEvent(new PainLevelChangedEvent(GetNetEntity(ent), oldLevel, painComp.CurrentPainLevel));
 
         if (painComp.CurrentPainLevel <= _alerts.GetMaxSeverity(painComp.Alert))
             _alerts.ShowAlert(ent, painComp.Alert, (short)painComp.CurrentPainLevel);
@@ -168,14 +182,19 @@ public sealed partial class PainSystem : EntitySystem
             pain.NextUpdateTime = time + pain.UpdateRate;
             DirtyField(uid, pain, nameof(PainComponent.NextUpdateTime));
 
+            if (pain.CurrentPain == 0 && pain.PainModifiers.Count == 0)
+                // Nothing to process!
+                continue;
+
             // Remove any expired modifiers.
-            if (pain.PainModifiers.RemoveAll(mod => time > mod.ExpireAt) != 0)
+            // (expire timings get messy on client due to the `EntityEffect` problem mentioned below, so server only here)
+            if (_net.IsServer && pain.PainModifiers.RemoveAll(mod => time > mod.ExpireAt) != 0)
                 DirtyField(uid, pain, nameof(PainComponent.PainModifiers));
 
             // Update the pain felt by the player.
             UpdateCurrentPainPercentage((uid, pain));
 
-            // Server-side only from this point since `EntityEffect`s aren't predicted yet.
+            // Server-side only from this point because the `EntityEffect`s in `PainLevels` aren't predicted or serializable.
             if (_net.IsClient)
                 continue;
 
