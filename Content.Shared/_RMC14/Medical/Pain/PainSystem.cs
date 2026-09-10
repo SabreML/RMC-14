@@ -46,15 +46,11 @@ public sealed partial class PainSystem : EntitySystem
     private void OnRejuvenate(Entity<PainComponent> ent, ref RejuvenateEvent args)
     {
         var pain = ent.Comp;
-        var oldPainLevel = pain.CurrentPainLevel;
-        pain.PainModifiers = [];
+        pain.PainModifiers.Clear();
         pain.CurrentPain = 0;
         pain.CurrentPainPercentage = 0;
-        pain.CurrentPainLevel = 0;
+        SetCurrentPainLevel(ent, 0);
         Dirty(ent);
-
-        // Update the pain/damage screen overlay.
-        RaiseNetworkEvent(new PainLevelChangedEvent(GetNetEntity(ent), oldPainLevel, pain.CurrentPainLevel));
 
         _alerts.ShowAlert(ent, pain.Alert, 0);
     }
@@ -136,27 +132,47 @@ public sealed partial class PainSystem : EntitySystem
         }
     }
 
-    public void UpdateCurrentPainLevel(Entity<PainComponent?> ent, int level)
+    /// <summary>
+    /// Move <paramref name="ent"/>'s <see cref="PainComponent.CurrentPainLevel"/> towards <paramref name="targetLevel"/> by one level at a time.
+    /// </summary>
+    /// <example>
+    /// Before: ent.Comp.CurrentPainLevel == 2
+    /// <code>
+    ///     StepCurrentPainLevel(ent, 5);
+    /// </code>
+    /// After: ent.Comp.CurrentPainLevel == 3
+    /// </example>
+    /// <param name="ent">Entity whose <see cref="PainComponent"/> should be modified.</param>
+    /// <param name="targetLevel">Target pain level to move towards.</param>
+    private void StepCurrentPainLevel(Entity<PainComponent> ent, int targetLevel)
     {
-        if (!_net.IsServer || !Resolve(ent, ref ent.Comp))
-            return;
         var painComp = ent.Comp;
 
-        if (level == painComp.CurrentPainLevel)
+        if (targetLevel == painComp.CurrentPainLevel)
             return;
 
-        var oldLevel = painComp.CurrentPainLevel;
         // `CompareTo()` returns either 1, 0, or -1, so this modifies it one step at a time.
-        painComp.CurrentPainLevel += level.CompareTo(painComp.CurrentPainLevel);
-        DirtyField(ent, ent.Comp, nameof(PainComponent.CurrentPainLevel));
-
-        // Because `EntityEffect` is (currently) unable to be be serialized, only the server can
-        // actually see `PainLevels` and set `CurrentPainLevel` properly depending on its thresholds.
-        // In order to make the client-side damage vignette change based on the user's pain, this needs to be sent over the network manually.
-        RaiseNetworkEvent(new PainLevelChangedEvent(GetNetEntity(ent), oldLevel, painComp.CurrentPainLevel));
+        SetCurrentPainLevel(ent, painComp.CurrentPainLevel + targetLevel.CompareTo(painComp.CurrentPainLevel));
 
         if (painComp.CurrentPainLevel <= _alerts.GetMaxSeverity(painComp.Alert))
             _alerts.ShowAlert(ent, painComp.Alert, (short)painComp.CurrentPainLevel);
+    }
+
+    /// <summary>
+    /// Simple setter for <see cref="PainComponent.CurrentPainLevel"/> which also raises <see cref="PainLevelChangedEvent"/>
+    /// so that the client-side pain vignette damage overlay thing can update itself.
+    /// </summary>
+    private void SetCurrentPainLevel(Entity<PainComponent> ent, int newLevel)
+    {
+        if (ent.Comp.CurrentPainLevel == newLevel)
+            return;
+
+        var previousPainLevel = ent.Comp.CurrentPainLevel;
+        ent.Comp.CurrentPainLevel = newLevel;
+        DirtyField(ent, ent.Comp, nameof(PainComponent.CurrentPainLevel));
+
+        var ev = new PainLevelChangedEvent(ent, previousPainLevel, ent.Comp.CurrentPainLevel);
+        RaiseLocalEvent(ent, ref ev, true);
     }
 
     private FixedPoint2 GetDamageGroupPain(DamageSpecifier damage, ProtoId<DamageGroupPrototype> damageGroup, FixedPoint2 painMultiplier)
@@ -182,7 +198,7 @@ public sealed partial class PainSystem : EntitySystem
             pain.NextUpdateTime = time + pain.UpdateRate;
             DirtyField(uid, pain, nameof(PainComponent.NextUpdateTime));
 
-            if (pain.CurrentPain == 0 && pain.PainModifiers.Count == 0)
+            if (pain.CurrentPain == 0 && pain.CurrentPainPercentage == 0 && pain.PainModifiers.Count == 0)
                 // Nothing to process!
                 continue;
 
@@ -194,10 +210,6 @@ public sealed partial class PainSystem : EntitySystem
             // Update the pain felt by the player.
             UpdateCurrentPainPercentage((uid, pain));
 
-            // Server-side only from this point because the `EntityEffect`s in `PainLevels` aren't predicted or serializable.
-            if (_net.IsClient)
-                continue;
-
             if (time >= pain.NextPainLevelUpdateTime)
             {
                 pain.NextPainLevelUpdateTime = time + pain.PainLevelUpdateRate;
@@ -205,8 +217,12 @@ public sealed partial class PainSystem : EntitySystem
 
                 // Get the highest level in `PainLevels` whose threshold has been passed by `CurrentPainPercentage`.
                 var newPainLevel = pain.PainLevels.FindLastIndex(level => level.Threshold <= pain.CurrentPainPercentage);
-                UpdateCurrentPainLevel((uid, pain), newPainLevel);
+                StepCurrentPainLevel((uid, pain), newPainLevel);
             }
+
+            // Server-side only from this point because `EntityEffect`s are seemingly unable to be serialized over to the client.
+            if (_net.IsClient)
+                continue;
 
             // Trigger any effects defined for this pain level.
             var currentEffectList = pain.PainLevels[pain.CurrentPainLevel].LevelEffects;

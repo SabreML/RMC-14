@@ -24,7 +24,7 @@ public sealed partial class PainComponent : Component
     public FixedPoint2 CurrentPainPercentage = FixedPoint2.Zero;
 
     /// <summary>
-    /// Current index in the <see cref="PainLevels"/> list.
+    /// Zero-based index of the currently active <see cref="PainLevel"/> in the <see cref="PainLevels"/> list.
     /// This is set based on the highest <see cref="PainLevel.Threshold"/> passed by <see cref="CurrentPainPercentage"/>.
     /// </summary>
     [ViewVariables, AutoNetworkedField]
@@ -35,8 +35,8 @@ public sealed partial class PainComponent : Component
     /// that <see cref="CurrentPain"/> is actually felt by the player in <see cref="CurrentPainPercentage"/>.
     /// </summary>
     /// <remarks>
-    /// Due to painkiller <see cref="EntityEffect"/>s not being predictable, the values of any
-    /// <see cref="PainModifier"/>s caused by them may be out of sync on Client-side. <see cref="PainModifier.ExpireAt"/> in particular.
+    /// Due to painkiller <see cref="EntityEffect"/>s not being predictable, the values of any <see cref="PainModifier"/>s
+    /// caused by them may be out of sync the Client's side. <see cref="PainModifier.ExpireAt"/> in particular.
     /// </remarks>
     /// <seealso cref="PainSystem.UpdateCurrentPainPercentage(Entity{PainComponent})"/>
     [ViewVariables, Access(typeof(PainSystem)), AutoNetworkedField]
@@ -85,11 +85,19 @@ public sealed partial class PainComponent : Component
     /// <see cref="CurrentPainPercentage"/> passes their <see cref="PainLevel.Threshold"/>. <br/>
     /// Only one <see cref="PainLevel"/> can be active at a time, with the currently active level indicated by its index in <see cref="CurrentPainLevel"/>.
     /// </summary>
-    /// <remarks>
-    /// Server-side only due to the <see cref="EntityEffect"/>s in <see cref="PainLevel.LevelEffects"/> not being serializable.
-    /// </remarks>
-    [DataField(required: true, serverOnly: true)]
+    [DataField(readOnly: true, required: true)]
     public List<PainLevel> PainLevels = [];
+}
+
+[DataRecord]
+public record struct PainLevel
+{
+    [DataField]
+    public FixedPoint2 Threshold;
+
+    // Server-side only due to `EntityEffect` not being serializable. (`Threshold` is fine though)
+    [DataField(serverOnly: true)]
+    public List<EntityEffect> LevelEffects;
 }
 
 [DataDefinition, Serializable, NetSerializable]
@@ -111,9 +119,6 @@ public sealed partial class PainModifier
         Type = type;
     }
 }
-
-[DataRecord]
-public record struct PainLevel(FixedPoint2 Threshold, List<EntityEffect> LevelEffects);
 
 [Serializable, NetSerializable]
 public enum PainModifierType : byte
