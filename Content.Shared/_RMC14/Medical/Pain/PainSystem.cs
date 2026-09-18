@@ -25,11 +25,6 @@ public sealed partial class PainSystem : EntitySystem
     [Dependency] private readonly AlertsSystem _alerts = default!;
     [Dependency] private readonly MobStateSystem _mobState = default!;
 
-    private static readonly ProtoId<DamageGroupPrototype> BruteGroup = "Brute";
-    private static readonly ProtoId<DamageGroupPrototype> BurnGroup = "Burn";
-    private static readonly ProtoId<DamageGroupPrototype> ToxinGroup = "Toxin";
-    private static readonly ProtoId<DamageGroupPrototype> AirlossGroup = "Airloss";
-
     public override void Initialize()
     {
         SubscribeLocalEvent<PainComponent, ComponentInit>(OnInit);
@@ -39,6 +34,20 @@ public sealed partial class PainSystem : EntitySystem
         SubscribeLocalEvent<PainComponent, RejuvenateEvent>(OnRejuvenate);
     }
 
+    /// <summary>
+	/// Add a new <see cref="PainModifier"/> to <paramref name="ent"/>'s <see cref="PainComponent.PainModifiers"/>,
+    /// to be removed when its <see cref="PainModifier.ExpireAt"/> time is reached.
+	/// </summary>
+    public void AddPainModifier(Entity<PainComponent?> ent, PainModifier mod)
+    {
+        if (!Resolve(ent, ref ent.Comp, false))
+            return;
+
+        ent.Comp.PainModifiers.Add(mod);
+        DirtyField(ent, ent.Comp, nameof(PainComponent.PainModifiers));
+    }
+
+    /// <inheritdoc cref="AddPainModifier(Entity{PainComponent?}, PainModifier)"/>
     public void AddPainModifier(Entity<PainComponent?> ent, TimeSpan duration, FixedPoint2 effectStrength, PainModifierType type)
     {
         var expireAt = _timing.CurTime + duration;
@@ -46,12 +55,20 @@ public sealed partial class PainSystem : EntitySystem
         AddPainModifier(ent, mod);
     }
 
-    public void AddPainModifier(Entity<PainComponent?> ent, PainModifier mod)
+    /// <summary>
+    /// Remove all currently active <see cref="PainModifier"/>s in <paramref name="ent"/>'s <see cref="PainComponent.PainModifiers"/>,
+    /// regardless of whether they've reached their <see cref="PainModifier.ExpireAt"/> time or not.
+    /// </summary>
+    /// <remarks>
+    /// Modifiers from painkillers or other <see cref="EntityEffect"/>s will automatically re-apply themselves the next tick.
+    /// In order to prevent that, the source reagent/effect needs to be removed as well.
+    /// </remarks>
+    public void ClearPainModifiers(Entity<PainComponent?> ent)
     {
-        if (!Resolve(ent, ref ent.Comp, false))
+        if (!Resolve(ent, ref ent.Comp))
             return;
 
-        ent.Comp.PainModifiers.Add(mod);
+        ent.Comp.PainModifiers.Clear();
         DirtyField(ent, ent.Comp, nameof(PainComponent.PainModifiers));
     }
 
@@ -84,10 +101,8 @@ public sealed partial class PainSystem : EntitySystem
         var damage = args.Damageable.Damage;
         var newPainValue = FixedPoint2.Zero;
 
-        newPainValue += GetDamageGroupPain(damage, BruteGroup, painComp.BrutePainMultiplier);
-        newPainValue += GetDamageGroupPain(damage, BurnGroup, painComp.BurnPainMultiplier);
-        newPainValue += GetDamageGroupPain(damage, ToxinGroup, painComp.ToxinPainMultiplier);
-        newPainValue += GetDamageGroupPain(damage, AirlossGroup, painComp.AirlossPainMultiplier);
+        foreach (var (groupId, value) in ent.Comp.DamageGroupPainMultipliers)
+            newPainValue += GetDamageGroupPain(damage, groupId, value);
 
         if (painComp.BasePain != newPainValue)
         {

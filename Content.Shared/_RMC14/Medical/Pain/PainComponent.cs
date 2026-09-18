@@ -5,6 +5,7 @@ using Content.Shared.Alert;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Serialization;
 using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom;
+using Content.Shared.Damage.Prototypes;
 
 namespace Content.Shared._RMC14.Medical.Pain;
 
@@ -53,6 +54,37 @@ public sealed partial class PainComponent : Component
     public List<PainModifier> PainModifiers = [];
 
     /// <summary>
+    /// List of <see cref="PainLevel"/>s structs, each containing its own list of <see cref="EntityEffect"/>s to be triggered when
+    /// <see cref="PerceivedPain"/> passes their <see cref="PainLevel.Threshold"/>.<br/>
+    /// Only one <see cref="PainLevel"/> can be active at a time, with the currently active level indicated by its index in <see cref="CurrentPainLevelIdx"/>.
+    /// </summary>
+    [DataField(required: true)]
+    public List<PainLevel> PainLevels = [];
+
+    /// <summary>
+    /// Dictionary of <see cref="DamageGroupPrototype"/>s, and a multiplier for the pain caused by each when inflicted.<br/>
+    /// 0 == No pain | 1 == 1:1 damage to pain | 1.5 == 50% increase | etc.
+    /// </summary>
+    [DataField, AutoNetworkedField]
+    public Dictionary<ProtoId<DamageGroupPrototype>, FixedPoint2> DamageGroupPainMultipliers = new()
+    {
+        {"Brute", FixedPoint2.New(1)},
+        {"Burn", FixedPoint2.New(1.2)},
+        {"Toxin", FixedPoint2.New(1.5)},
+        {"Airloss", FixedPoint2.Zero}
+    };
+
+    /// <summary>
+    /// Controls the rate at which <see cref="PainModifierType.PainReduction"/> <see cref="PainModifier"/>s lose effectiveness as <see cref="BasePain"/> increases.
+    /// <para>
+    /// The actual calculation can be seen in <see cref="PainSystem.UpdatePerceivedPain(Entity{PainComponent})"/>, but it essentially works out as:<br/>
+    /// "For every point of (<see cref="BasePain"/> + Increase modifiers), reduction strength decreases by <see cref="PainReductionDecreaseRate"/>".
+    /// </para>
+    /// </summary>
+    [DataField, AutoNetworkedField]
+    public FixedPoint2 PainReductionDecreaseRate = FixedPoint2.New(0.25);
+
+    /// <summary>
     /// Time between each update of this component in <see cref="PainSystem.Update(float)"/>.
     /// </summary>
     [DataField, AutoNetworkedField]
@@ -73,30 +105,7 @@ public sealed partial class PainComponent : Component
     public TimeSpan NextPainLevelUpdateTime = new(0);
 
     [DataField, AutoNetworkedField]
-    public FixedPoint2 PainReductionDecreaseRate = FixedPoint2.New(0.25);
-
-    [DataField, AutoNetworkedField]
-    public FixedPoint2 BrutePainMultiplier = FixedPoint2.New(1);
-
-    [DataField, AutoNetworkedField]
-    public FixedPoint2 BurnPainMultiplier = FixedPoint2.New(1.2);
-
-    [DataField, AutoNetworkedField]
-    public FixedPoint2 ToxinPainMultiplier = FixedPoint2.New(1.5);
-
-    [DataField, AutoNetworkedField]
-    public FixedPoint2 AirlossPainMultiplier = FixedPoint2.Zero;
-
-    [DataField, AutoNetworkedField]
     public ProtoId<AlertPrototype> Alert = "HumanoidPainHealth";
-
-    /// <summary>
-    /// List of <see cref="PainLevel"/>s structs, each containing its own list of <see cref="EntityEffect"/>s to be triggered when
-    /// <see cref="PerceivedPain"/> passes their <see cref="PainLevel.Threshold"/>.<br/>
-    /// Only one <see cref="PainLevel"/> can be active at a time, with the currently active level indicated by its index in <see cref="CurrentPainLevelIdx"/>.
-    /// </summary>
-    [DataField(required: true)]
-    public List<PainLevel> PainLevels = [];
 }
 
 [DataRecord]
