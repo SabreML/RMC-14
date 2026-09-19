@@ -113,18 +113,18 @@ public sealed class DamageOverlayUiController : UIController
                 // RMC14 Start
                 if (EntityManager.TryGetComponent<PainComponent>(entity, out var painComp))
                 {
-                    var visiblePainPercentage = painComp.PerceivedPain;
+                    var visiblePainAmount = painComp.PerceivedPain;
 
                     // Clamp the value between the currently active level's threshold and the next level's threshold, so that the pain overlay
                     // updates per-level rather that independently of it by just using `PerceivedPain`.
                     // (It's still allowed to change to any value within the min and max, just not go past them until the current pain level changes)
-                    if (painComp.PainLevels.TryGetValue(painComp.CurrentPainLevelIdx, out var lowerThreshold) &&
-                        painComp.PainLevels.TryGetValue(painComp.CurrentPainLevelIdx + 1, out var upperThreshold))
+                    if (painComp.PainLevels.TryGetValue(painComp.CurrentPainLevelIdx, out var currentPainLevel) &&
+                        painComp.PainLevels.TryGetValue(painComp.CurrentPainLevelIdx + 1, out var nextPainLevel))
                     {
-                        visiblePainPercentage = FixedPoint2.Clamp(visiblePainPercentage, lowerThreshold.Threshold, upperThreshold.Threshold);
+                        visiblePainAmount = FixedPoint2.Clamp(visiblePainAmount, currentPainLevel.Threshold, nextPainLevel.Threshold);
                     }
 
-                    var newOverlayPainLevel = (visiblePainPercentage / 100).Float();
+                    var newOverlayPainLevel = (visiblePainAmount / 100).Float();
                     _overlay.PainLevel = newOverlayPainLevel < 0.05f ? 0 : newOverlayPainLevel; // Don't show damage overlay if they're near enough to max.
                     }
                 else if (!EntityManager.HasComponent<PainNumbnessComponent>(entity)) // RMC14 End
