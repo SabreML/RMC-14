@@ -4,6 +4,8 @@ using Content.Shared._RMC14.Medical.Pain;
 using Content.Shared.Damage;
 using Content.Shared.Damage.Prototypes;
 using Content.Shared.FixedPoint;
+using Content.Shared.Mobs;
+using Content.Shared.Mobs.Systems;
 using Content.Shared.StatusEffect;
 using Robust.Client.Graphics;
 using Robust.Shared.GameObjects;
@@ -26,10 +28,16 @@ public sealed class PainTests
     [TestPrototypes]
     private const string Prototypes = $"""
 - type: entity
-  parent: MobDamageable
   id: {TestPainEntityId}
   components:
+  - type: Damageable
+    damageContainer: Biological
   - type: MobState
+  - type: MobThresholds
+    thresholds:
+      0: Alive
+      100: Critical
+      200: Dead
   - type: StatusEffects
     allowed:
     - PainLevel1
@@ -93,11 +101,13 @@ public sealed class PainTests
   id: PainLevel4
 """;
 
-    private static FixedPoint2 _damageAmount = 30;
+    private const int DamageAmountInt = 30;
+    private static FixedPoint2 _damageAmount = FixedPoint2.New(DamageAmountInt);
 
     private TestPair _pair;
     private PainSystem _sPainSystem;
     private DamageableSystem _sDamageableSystem;
+    private MobStateSystem _sMobStateSystem;
     private SharedMapSystem _sMapSystem;
 
     private EntityUid _sPainEntity;
@@ -112,6 +122,7 @@ public sealed class PainTests
 
         _sPainSystem = server.EntMan.System<PainSystem>();
         _sDamageableSystem = server.EntMan.System<DamageableSystem>();
+        _sMobStateSystem = server.EntMan.System<MobStateSystem>();
         _sMapSystem = server.EntMan.System<SharedMapSystem>();
 
         await _pair.CreateTestMap();
@@ -146,7 +157,7 @@ public sealed class PainTests
         Assert.Multiple(() =>
         {
             Assert.That(_sDamageableComp.Damage.AnyPositive(), Is.False);
-            Assert.That(_sPainComp.BasePain, Is.EqualTo(FixedPoint2.Zero));
+            AssertPainCompMatchesExpected(FixedPoint2.Zero);
         });
 
         await SetDamage(_damageAmount, damageGroupProtoId);
@@ -158,28 +169,26 @@ public sealed class PainTests
         Assert.Multiple(() =>
         {
             Assert.That(damage, Is.EqualTo(_damageAmount));
-            Assert.That(_sPainComp.BasePain, Is.EqualTo(_damageAmount * _sPainComp.DamageGroupPainMultipliers[damageGroupProtoId]));
-            Assert.That(_sPainComp.PerceivedPain, Is.EqualTo(_sPainComp.BasePain));
+            AssertPainCompMatchesExpected(_damageAmount * _sPainComp.DamageGroupPainMultipliers[damageGroupProtoId]);
         });
     }
 
-    [TestCaseSource(nameof(GetPainModifierTypes))]
+    [Test]
     [TestOf(typeof(PainModifier))]
     [Repeat(50)] // temp
-    public async Task TestPainModifiers(PainModifierType modifierType)
+    public async Task TestPainModifiers(
+        [Values(0, DamageAmountInt)] int initialDamage,
+        [ValueSource(nameof(GetPainModifierTypes))] PainModifierType modifierType)
     {
         await SetUp();
         const int modifierStrength = 20;
 
         // Add some damage.
-        await SetDamage(_damageAmount);
+        if (initialDamage != 0)
+            await SetDamage(initialDamage);
+        AssertPainCompMatchesExpected(initialDamage);
 
-        Assert.Multiple(() =>
-        {
-            Assert.That(_sPainComp.BasePain, Is.EqualTo(_damageAmount));
-            Assert.That(_sPainComp.PerceivedPain, Is.EqualTo(_sPainComp.BasePain));
-        });
-
+        // Add the modifier.
         var modifier = new PainModifier(TimeSpan.FromHours(1), modifierStrength, modifierType);
         _sPainSystem.AddPainModifier(_sPainEntity, modifier);
         await _pair.Server.WaitRunTicks(5);
@@ -194,8 +203,7 @@ public sealed class PainTests
         Assert.Multiple(() =>
         {
             Assert.That(_sPainComp.PainModifiers.Single(), Is.EqualTo(modifier));
-            Assert.That(_sPainComp.BasePain, Is.EqualTo(_damageAmount));
-            Assert.That(_sPainComp.PerceivedPain, Is.EqualTo(expectedPerceivedPain));
+            AssertPainCompMatchesExpected(initialDamage, expectedPerceivedPain);
         });
 
         _sPainSystem.ClearPainModifiers(_sPainEntity);
@@ -205,8 +213,7 @@ public sealed class PainTests
         Assert.Multiple(() =>
         {
             Assert.That(_sPainComp.PainModifiers, Is.Empty);
-            Assert.That(_sPainComp.BasePain, Is.EqualTo(_damageAmount));
-            Assert.That(_sPainComp.PerceivedPain, Is.EqualTo(_sPainComp.BasePain));
+            AssertPainCompMatchesExpected(initialDamage);
         });
     }
 
@@ -332,12 +339,79 @@ public sealed class PainTests
         }
     }
 
+    [Test]
+    [Repeat(50)] // temp
+    public async Task TestDeathAndRevive(
+        [Values(0, DamageAmountInt)] int initialDamageInt,
+        [Values(0, DamageAmountInt, -(DamageAmountInt / 2))] int afterDeathDamageChangeInt)
+    {
+        await SetUp();
+        var initialDamage = FixedPoint2.New(initialDamageInt);
+        var afterDeathDamageChange = FixedPoint2.New(afterDeathDamageChangeInt);
+
+        if (initialDamage != 0)
+            await SetDamage(initialDamage);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_sMobStateSystem.IsAlive(_sPainEntity), Is.True);
+            AssertPainCompMatchesExpected(initialDamage);
+        });
+
+        await _pair.Server.WaitPost(() => _sMobStateSystem.ChangeMobState(_sPainEntity, MobState.Dead));
+        await _pair.Server.WaitRunTicks(5);
+
+        // On death, `PainSystem` should have cleared out all pain vars other than `BasePain`.
+        Assert.Multiple(() =>
+        {
+            Assert.That(_sMobStateSystem.IsDead(_sPainEntity), Is.True);
+            AssertPainCompMatchesExpected(initialDamage, FixedPoint2.Zero);
+        });
+
+        var afterDeathDamage = FixedPoint2.Max(0, initialDamage + afterDeathDamageChange);
+        // If damage changes at all while they're dead, only `BasePain` updated.
+        if (afterDeathDamageChange != 0)
+        {
+            await SetDamage(afterDeathDamage);
+            AssertPainCompMatchesExpected(afterDeathDamage, FixedPoint2.Zero);
+        }
+
+        await _pair.Server.WaitPost(() => _sMobStateSystem.ChangeMobState(_sPainEntity, MobState.Alive));
+        await _pair.Server.WaitRunTicks(5);
+
+        // On revival, everything should go back to normal.
+        Assert.Multiple(() =>
+        {
+            Assert.That(_sMobStateSystem.IsAlive(_sPainEntity), Is.True);
+            AssertPainCompMatchesExpected(afterDeathDamage);
+        });
+    }
+
+    private void AssertPainCompMatchesExpected(FixedPoint2 expectedBasePain, FixedPoint2? expectedPerceivedPain = null)
+    {
+        expectedPerceivedPain ??= expectedBasePain;
+        var (_, expectedPainLevelIdx) = GetHighestPainLevelForDamageValue(expectedPerceivedPain.Value);
+        Assert.Multiple(() =>
+        {
+            Assert.That(_sPainComp.BasePain, Is.EqualTo(expectedBasePain));
+            Assert.That(_sPainComp.PerceivedPain, Is.EqualTo(expectedPerceivedPain));
+            Assert.That(_sPainComp.CurrentPainLevelIdx, Is.EqualTo(expectedPainLevelIdx));
+        });
+    }
+
     private async Task SetDamage(FixedPoint2 amount, ProtoId<DamageGroupPrototype>? damageGroupOverride = null)
     {
         var damageGroupPrototype = _pair.Server.ProtoMan.Index(damageGroupOverride ?? "Brute");
         var specifier = new DamageSpecifier(damageGroupPrototype, amount);
         _sDamageableSystem.SetDamage(_sPainEntity, _sDamageableComp, specifier);
         await _pair.Server.WaitRunTicks(5);
+    }
+
+    private (PainLevel Level, int Idx) GetHighestPainLevelForDamageValue(FixedPoint2 damageValue)
+    {
+        return _sPainComp.PainLevels
+            .Select((level, idx) => (level, idx))
+            .Last(i => i.level.Threshold <= damageValue);
     }
 
     private static PainModifierType[] GetPainModifierTypes()
@@ -354,7 +428,7 @@ public sealed class PainTests
     [X] Pain reduction modifier falloff test
     [X] Ensure assert fails if painlevels aren't in order
     [X] Thresholds and threshold effects work and apply properly
-    [ ] Vars clear and resets correctly on death + revive. Test dying with pain and with no pain
+    [X] Vars clear and resets correctly on death + revive. Test dying with pain and with no pain
     [ ] Test painknockoutcomponent?
     [X] Client pain overlay test (increases on damage up to pain level threshold, removed on heal)
     */
