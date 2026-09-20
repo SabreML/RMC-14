@@ -10,7 +10,7 @@ using Content.Shared.Damage.Prototypes;
 namespace Content.Shared._RMC14.Medical.Pain;
 
 [Access(typeof(PainSystem))]
-[RegisterComponent, NetworkedComponent, AutoGenerateComponentState(fieldDeltas: true), AutoGenerateComponentPause]
+[RegisterComponent, NetworkedComponent, AutoGenerateComponentState(true, true), AutoGenerateComponentPause]
 public sealed partial class PainComponent : Component
 {
     /// <summary>
@@ -106,6 +106,15 @@ public sealed partial class PainComponent : Component
 
     [DataField, AutoNetworkedField]
     public ProtoId<AlertPrototype> Alert = "HumanoidPainHealth";
+
+    /// <summary>
+    /// The previous <see cref="CurrentPainLevelIdx"/>, used to check if it changed for use in
+    /// <see cref="PainSystem.OnPainState(Entity{PainComponent}, ref AfterAutoHandleStateEvent)"/>.
+    /// </summary>
+    /// <remarks>
+    /// This field is specifically <i>not</i> networked, and should ideally be client-side only.
+    /// </remarks>
+    public int PreviousPainLevelIdx; // todo: check if this needs a vv attribute. also finish writing the doc comment
 }
 
 [DataRecord]

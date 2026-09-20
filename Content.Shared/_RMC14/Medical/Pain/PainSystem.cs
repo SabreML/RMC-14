@@ -28,6 +28,7 @@ public sealed partial class PainSystem : EntitySystem
     public override void Initialize()
     {
         SubscribeLocalEvent<PainComponent, ComponentInit>(OnInit);
+        SubscribeLocalEvent<PainComponent, AfterAutoHandleStateEvent>(OnPainState);
         SubscribeLocalEvent<PainComponent, DamageChangedEvent>(OnDamageChanged);
         SubscribeLocalEvent<PainComponent, MobStateChangedEvent>(OnMobStateChanged);
         SubscribeLocalEvent<PainComponent, BeforeAlertSeverityCheckEvent>(OnAlertSeverityCheck);
@@ -35,9 +36,9 @@ public sealed partial class PainSystem : EntitySystem
     }
 
     /// <summary>
-	/// Add a new <see cref="PainModifier"/> to <paramref name="ent"/>'s <see cref="PainComponent.PainModifiers"/>,
+    /// Add a new <see cref="PainModifier"/> to <paramref name="ent"/>'s <see cref="PainComponent.PainModifiers"/>,
     /// to be removed when its <see cref="PainModifier.ExpireAt"/> time is reached.
-	/// </summary>
+    /// </summary>
     public void AddPainModifier(Entity<PainComponent?> ent, PainModifier mod)
     {
         if (!Resolve(ent, ref ent.Comp, false))
@@ -78,12 +79,38 @@ public sealed partial class PainSystem : EntitySystem
             $"{nameof(PainComponent)}.{nameof(PainComponent.PainLevels)} entries must be written in order of their thresholds. (Low -> High)");
     }
 
+    /// <summary>
+    /// Used to force an update of the client-side pain overlay vignette and health alert whenever
+    /// <see cref="PainComponent.CurrentPainLevelIdx"/> updates.
+    /// </summary>
+    /// <remarks>
+    /// The pain overlay is <i>usually</i> updated by the <see cref="MobThresholdChecked"/> event whenever the player's damage changes,
+    /// but <see cref="PainComponent.CurrentPainLevelIdx"/> is specifically designed to lag behind by a few seconds.<br/>
+    /// The <see cref="PainLevelChangedEvent"/> in here works to keep it up-to-date as the pain level slowly increases or decreases.
+    /// </remarks>
+    private void OnPainState(Entity<PainComponent> ent, ref AfterAutoHandleStateEvent args)
+    {
+        if (ent.Comp.PreviousPainLevelIdx != ent.Comp.CurrentPainLevelIdx)
+        {
+            var painComp = ent.Comp;
+            var ev = new PainLevelChangedEvent(ent, painComp.PreviousPainLevelIdx, painComp.CurrentPainLevelIdx);
+            RaiseLocalEvent(ent, ref ev, true);
+            painComp.PreviousPainLevelIdx = painComp.CurrentPainLevelIdx;
+
+            if (painComp.CurrentPainLevelIdx <= _alerts.GetMaxSeverity(painComp.Alert))
+                _alerts.ShowAlert(ent, painComp.Alert, (short)painComp.CurrentPainLevelIdx);
+        }
+    }
+
     private void OnRejuvenate(Entity<PainComponent> ent, ref RejuvenateEvent args)
     {
         ent.Comp.PerceivedPain = 0;
+        ent.Comp.CurrentPainLevelIdx = 0;
         ent.Comp.PainModifiers.Clear();
-        SetCurrentPainLevelIdx(ent, 0);
-        DirtyFields(ent, ent.Comp, null, nameof(PainComponent.PerceivedPain), nameof(PainComponent.PainModifiers));
+        DirtyFields(ent, ent.Comp, null,
+            nameof(PainComponent.PerceivedPain),
+            nameof(PainComponent.CurrentPainLevelIdx),
+            nameof(PainComponent.PainModifiers));
     }
 
     private void OnAlertSeverityCheck(Entity<PainComponent> ent, ref BeforeAlertSeverityCheckEvent args)
@@ -130,9 +157,12 @@ public sealed partial class PainSystem : EntitySystem
             // Clear out all of their (relevant) `PainComponent` vars, just for the sake of preventing weird edge case behaviour.
             // If the user gets revived then they all repopulate themselves automatically.
             ent.Comp.PerceivedPain = 0;
+            ent.Comp.CurrentPainLevelIdx = 0;
             ent.Comp.PainModifiers.Clear();
-            SetCurrentPainLevelIdx(ent, 0);
-            DirtyFields(ent, ent.Comp, null, nameof(PainComponent.PerceivedPain), nameof(PainComponent.PainModifiers));
+            DirtyFields(ent, ent.Comp, null,
+                nameof(PainComponent.PerceivedPain),
+                nameof(PainComponent.CurrentPainLevelIdx),
+                nameof(PainComponent.PainModifiers));
         }
         // Going from dead to *not* dead.
         else if (args.OldMobState == MobState.Dead)
@@ -141,7 +171,11 @@ public sealed partial class PainSystem : EntitySystem
             // This *does* happen automatically in `Update()`, but that only moves `CurrentPainLevelIdx` one step at a time.
             // Setting it here is just to skip the wait time.
             UpdatePerceivedPain(ent);
-            SetCurrentPainLevelIdx(ent, GetHighestValidPainLevelIdx(ent));
+            ent.Comp.CurrentPainLevelIdx = GetHighestValidPainLevelIdx(ent);
+            DirtyField(ent, ent.Comp, nameof(PainComponent.CurrentPainLevelIdx));
+
+            // Also force an update of the pain overlay.
+
         }
     }
 
@@ -184,27 +218,6 @@ public sealed partial class PainSystem : EntitySystem
         return ent.Comp.PainLevels.FindLastIndex(level => level.Threshold <= ent.Comp.PerceivedPain);
     }
 
-    /// <summary>
-    /// Setter for <see cref="PainComponent.CurrentPainLevelIdx"/>, which also raises <see cref="PainLevelChangedEvent"/>
-    /// so that the client-side pain vignette damage overlay thing can update itself, and updates the health alert.
-    /// </summary>
-    private void SetCurrentPainLevelIdx(Entity<PainComponent> ent, int newLevel)
-    {
-        var painComp = ent.Comp;
-        if (painComp.CurrentPainLevelIdx == newLevel)
-            return;
-
-        var previousPainLevel = painComp.CurrentPainLevelIdx;
-        painComp.CurrentPainLevelIdx = newLevel;
-        DirtyField(ent, painComp, nameof(PainComponent.CurrentPainLevelIdx));
-
-        var ev = new PainLevelChangedEvent(ent, previousPainLevel, painComp.CurrentPainLevelIdx);
-        RaiseLocalEvent(ent, ref ev, true);
-
-        if (painComp.CurrentPainLevelIdx <= _alerts.GetMaxSeverity(painComp.Alert))
-            _alerts.ShowAlert(ent, painComp.Alert, (short)painComp.CurrentPainLevelIdx);
-    }
-
     public override void Update(float frameTime)
     {
         base.Update(frameTime);
@@ -245,11 +258,20 @@ public sealed partial class PainSystem : EntitySystem
                 // Get the highest level in `PainLevels` whose threshold has been passed by `PerceivedPain`.
                 var highestPainLevelIdx = GetHighestValidPainLevelIdx(uidEntity);
 
+                /* todo: new problem discovered
+                 * When a modifier is added (probably other things too), if the server updates
+                 * the pain level first in here before the client actually recieves that the modifier has been added,
+                 * by the time the client gets sent the update `CurrentPainLevelIdx` will have already been set, so the client
+                 * never calls `SetCurrentPainLevelIdx()` and the overlay doesn't update.
+                 * (remove this comment when it's fixed)
+                 */
+
                 // Move `currentPainLevelIdx` towards `highestPainLevelIdx` by one step.
                 if (highestPainLevelIdx > pain.CurrentPainLevelIdx)
-                    SetCurrentPainLevelIdx(uidEntity, pain.CurrentPainLevelIdx + 1);
+                    pain.CurrentPainLevelIdx++;
                 else if (highestPainLevelIdx < pain.CurrentPainLevelIdx)
-                    SetCurrentPainLevelIdx(uidEntity, pain.CurrentPainLevelIdx - 1);
+                    pain.CurrentPainLevelIdx--;
+                DirtyField(uid, pain, nameof(PainComponent.CurrentPainLevelIdx));
             }
 
             // Server-side only from this point because `EntityEffect`s are seemingly unable to be serialized over to the client.
