@@ -167,8 +167,6 @@ public sealed class PainTests
         await _pair.CleanReturnAsync();
     }
 
-    // todo: put tests in alphabetical order
-
     [Test]
     [Repeat(50)] // temp
     public async Task TestDamageGroups(
@@ -195,6 +193,57 @@ public sealed class PainTests
         {
             Assert.That(damage, Is.EqualTo(FixedPoint2.New(damageAmount)));
             AssertPainVarsMatchExpected(expectedBasePain);
+        });
+    }
+
+    [Test]
+    [Repeat(50)] // temp
+    public async Task TestDeathAndRevive(
+        [Values(0, SmallDamageAmount, BigDamageAmount)] int initialDamage,
+        [Values(0, SmallDamageAmount, BigDamageAmount, -SmallDamageAmount, -BigDamageAmount)] int afterDeathDamageChange)
+    {
+        await SetUp();
+
+        if (initialDamage != 0)
+        {
+            await SetDamage(initialDamage);
+            await WaitUntilPainLevelReachesTarget(initialDamage);
+        }
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_mobStateSystem.IsAlive(_sPainEntity), Is.True);
+            AssertPainVarsMatchExpected(initialDamage);
+        });
+
+        await _pair.Server.WaitPost(() => _mobStateSystem.ChangeMobState(_sPainEntity, MobState.Dead));
+        await _pair.RunTicksSync(5);
+
+        // On death, `PainSystem` should have cleared out all pain vars other than `BasePain`.
+        Assert.Multiple(() =>
+        {
+            Assert.That(_mobStateSystem.IsDead(_sPainEntity), Is.True);
+            AssertPainVarsMatchExpected(initialDamage, 0);
+        });
+
+        var afterDeathDamage = FixedPoint2.Max(0, initialDamage + afterDeathDamageChange);
+        // If damage changes at all while they're dead, only `BasePain` should be updated.
+        if (afterDeathDamageChange != 0)
+        {
+            await SetDamage(afterDeathDamage);
+            await WaitUntilPainLevelReachesTarget(afterDeathDamage, 0, 0);
+            AssertPainVarsMatchExpected(afterDeathDamage, 0);
+        }
+
+        await _pair.Server.WaitPost(() => _mobStateSystem.ChangeMobState(_sPainEntity, MobState.Alive));
+        await _pair.RunTicksSync(5);
+        await WaitUntilPainLevelReachesTarget(afterDeathDamage);
+
+        // On revival, everything should go back to normal.
+        Assert.Multiple(() =>
+        {
+            Assert.That(_mobStateSystem.IsAlive(_sPainEntity), Is.True);
+            AssertPainVarsMatchExpected(afterDeathDamage);
         });
     }
 
@@ -251,6 +300,32 @@ public sealed class PainTests
     }
 
     [Test]
+    [Repeat(50)] // temp
+    public async Task TestClientPainOverlay()
+    {
+        await SetUp(SlowUpdateEntityId);
+
+        // Below 5 damage shouldn't be visible in the overlay.
+        await SetDamage(4);
+        await _pair.SyncTicks();
+        AssertPainVarsMatchExpected(4);
+
+        // Anything over that *should* be visible.
+        var highestPainLevel = _sPainComp.PainLevels.Last();
+        await SetDamage(highestPainLevel.Threshold);
+        await _pair.SyncTicks();
+
+        // `PainComponent.CurrentPainLevelIdx` increases one step at a time every `PainComponent.PainLevelUpdateRate` seconds,
+        // so wait for it to catch up, running the standard assert checks after each level change.
+        await WaitUntilPainLevelReachesTarget(highestPainLevel.Threshold, targetPainLevelIdx: _sPainComp.PainLevels.Count - 1);
+
+        // And it should all go back to zero when the client's entity is healed.
+        await SetDamage(0);
+        // Same thing as above, checking each step down.
+        await WaitUntilPainLevelReachesTarget(0);
+    }
+
+    [Test]
     [TestOf(typeof(PainLevel))]
     [Repeat(50)] // temp
     public async Task TestPainLevels()
@@ -299,83 +374,6 @@ public sealed class PainTests
                     .With.InnerException.TypeOf<DebugAssertException>()
                     .And.InnerException.Message.Contains("entries must be written in order of their thresholds"),
                 () => _pair.Server.EntMan.SpawnEntity(UnorderedThresholdEntId, MapCoordinates.Nullspace));
-        });
-    }
-
-    [Test]
-    [Repeat(50)] // temp
-    public async Task TestClientPainOverlay()
-    {
-        await SetUp(SlowUpdateEntityId);
-
-        // Below 5 damage shouldn't be visible in the overlay.
-        await SetDamage(4);
-        await _pair.SyncTicks();
-        AssertPainVarsMatchExpected(4);
-
-        // Anything over that *should* be visible.
-        var highestPainLevel = _sPainComp.PainLevels.Last();
-        await SetDamage(highestPainLevel.Threshold);
-        await _pair.SyncTicks();
-
-        // `PainComponent.CurrentPainLevelIdx` increases one step at a time every `PainComponent.PainLevelUpdateRate` seconds,
-        // so wait for it to catch up, running the standard assert checks after each level change.
-        await WaitUntilPainLevelReachesTarget(highestPainLevel.Threshold, targetPainLevelIdx: _sPainComp.PainLevels.Count - 1);
-
-        // And it should all go back to zero when the client's entity is healed.
-        await SetDamage(0);
-        // Same thing as above, checking each step down.
-        await WaitUntilPainLevelReachesTarget(0);
-    }
-
-    [Test]
-    [Repeat(50)] // temp
-    public async Task TestDeathAndRevive(
-        [Values(0, SmallDamageAmount, BigDamageAmount)] int initialDamage,
-        [Values(0, SmallDamageAmount, BigDamageAmount, -SmallDamageAmount, -BigDamageAmount)] int afterDeathDamageChange)
-    {
-        await SetUp();
-
-        if (initialDamage != 0)
-        {
-            await SetDamage(initialDamage);
-            await WaitUntilPainLevelReachesTarget(initialDamage);
-        }
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(_mobStateSystem.IsAlive(_sPainEntity), Is.True);
-            AssertPainVarsMatchExpected(initialDamage);
-        });
-
-        await _pair.Server.WaitPost(() => _mobStateSystem.ChangeMobState(_sPainEntity, MobState.Dead));
-        await _pair.RunTicksSync(5);
-
-        // On death, `PainSystem` should have cleared out all pain vars other than `BasePain`.
-        Assert.Multiple(() =>
-        {
-            Assert.That(_mobStateSystem.IsDead(_sPainEntity), Is.True);
-            AssertPainVarsMatchExpected(initialDamage, 0);
-        });
-
-        var afterDeathDamage = FixedPoint2.Max(0, initialDamage + afterDeathDamageChange);
-        // If damage changes at all while they're dead, only `BasePain` should be updated.
-        if (afterDeathDamageChange != 0)
-        {
-            await SetDamage(afterDeathDamage);
-            await WaitUntilPainLevelReachesTarget(afterDeathDamage, 0, 0);
-            AssertPainVarsMatchExpected(afterDeathDamage, 0);
-        }
-
-        await _pair.Server.WaitPost(() => _mobStateSystem.ChangeMobState(_sPainEntity, MobState.Alive));
-        await _pair.RunTicksSync(5);
-        await WaitUntilPainLevelReachesTarget(afterDeathDamage);
-
-        // On revival, everything should go back to normal.
-        Assert.Multiple(() =>
-        {
-            Assert.That(_mobStateSystem.IsAlive(_sPainEntity), Is.True);
-            AssertPainVarsMatchExpected(afterDeathDamage);
         });
     }
 
