@@ -108,13 +108,24 @@ public sealed partial class PainComponent : Component
     public ProtoId<AlertPrototype> Alert = "HumanoidPainHealth";
 
     /// <summary>
-    /// The previous <see cref="CurrentPainLevelIdx"/>, used to check if it changed for use in
-    /// <see cref="PainSystem.OnPainState(Entity{PainComponent}, ref AfterAutoHandleStateEvent)"/>.
+    /// The previous <see cref="PerceivedPain"/>, used so that <see cref="PainSystem.OnPainState(Entity{PainComponent}, ref AfterAutoHandleStateEvent)"/>
+    /// can check if the value has changed between state updates.
     /// </summary>
     /// <remarks>
     /// This field is specifically <i>not</i> networked, and should ideally be client-side only.
     /// </remarks>
-    public int PreviousPainLevelIdx; // todo: check if this needs a vv attribute. also finish writing the doc comment
+    /// <seealso cref="PreviousPainLevelIdx"/>
+    public FixedPoint2 PreviousPerceivedPain; // todo: check if this needs a vv attribute
+
+    /// <summary>
+    /// The previous <see cref="CurrentPainLevelIdx"/>, used so that <see cref="PainSystem.OnPainState(Entity{PainComponent}, ref AfterAutoHandleStateEvent)"/>
+    /// can check if the value has changed between state updates.
+    /// </summary>
+    /// <remarks>
+    /// This field is specifically <i>not</i> networked, and should ideally be client-side only.
+    /// </remarks>
+    /// <seealso cref="PreviousPerceivedPain"/>
+    public int PreviousPainLevelIdx; // todo: check if this needs a vv attribute
 }
 
 [DataRecord]
@@ -129,7 +140,7 @@ public record struct PainLevel
 }
 
 [DataDefinition, Serializable, NetSerializable]
-public sealed partial class PainModifier
+public sealed partial class PainModifier : IEquatable<PainModifier>
 {
     [DataField(customTypeSerializer: typeof(TimeOffsetSerializer))]
     public TimeSpan ExpireAt;
@@ -146,6 +157,17 @@ public sealed partial class PainModifier
         EffectStrength = strength;
         Type = type;
     }
+
+    public bool Equals(PainModifier? other)
+    {
+        return other is not null &&
+            ExpireAt == other.ExpireAt &&
+            EffectStrength == other.EffectStrength &&
+            Type == other.Type;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as PainModifier);
+    public override int GetHashCode() => HashCode.Combine(ExpireAt, EffectStrength, Type);
 }
 
 [Serializable, NetSerializable]

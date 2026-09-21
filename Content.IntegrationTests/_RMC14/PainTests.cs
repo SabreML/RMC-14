@@ -110,13 +110,17 @@ public sealed class PainTests
     private const int BigDamageAmount = 30;
 
     private TestPair _pair = default!;
-    private PainSystem _sPainSystem = default!;
-    private DamageableSystem _sDamageableSystem = default!;
-    private MobStateSystem _sMobStateSystem = default!;
+    private PainSystem _painSystem = default!;
+    private DamageableSystem _damageableSystem = default!;
+    private MobStateSystem _mobStateSystem = default!;
 
     private EntityUid _sPainEntity;
     private PainComponent _sPainComp = default!;
     private DamageableComponent _sDamageableComp = default!;
+
+    private EntityUid _cPainEntity;
+    private PainComponent _cPainComp = default!;
+    private DamageableComponent _cDamageableComp = default!;
     private DamageOverlay _cDamageOverlay = default!;
 
     private static PainModifierType[] GetPainModifierTypes()
@@ -129,10 +133,11 @@ public sealed class PainTests
     {
         _pair = await PoolManager.GetServerClient(new PoolSettings { Connected = true });
         var server = _pair.Server;
+        var client = _pair.Client;
 
-        _sPainSystem = server.EntMan.System<PainSystem>();
-        _sDamageableSystem = server.EntMan.System<DamageableSystem>();
-        _sMobStateSystem = server.EntMan.System<MobStateSystem>();
+        _painSystem = server.EntMan.System<PainSystem>();
+        _damageableSystem = server.EntMan.System<DamageableSystem>();
+        _mobStateSystem = server.EntMan.System<MobStateSystem>();
 
         await server.WaitPost(() =>
         {
@@ -140,11 +145,17 @@ public sealed class PainTests
             _sPainComp = server.EntMan.GetComponent<PainComponent>(_sPainEntity);
             _sDamageableComp = server.EntMan.GetComponent<DamageableComponent>(_sPainEntity);
 
-            server.PlayerMan.SetAttachedEntity(server.PlayerMan.GetSessionById(_pair.Client.Session!.UserId), _sPainEntity);
+            server.PlayerMan.SetAttachedEntity(server.PlayerMan.GetSessionById(client.Session!.UserId), _sPainEntity);
         });
 
         await _pair.RunTicksSync(5);
-        var cOverlayMan = _pair.Client.ResolveDependency<IOverlayManager>();
+        await client.WaitPost(() =>
+        {
+            _cPainEntity = client.EntMan.GetEntity(server.EntMan.GetNetEntity(_sPainEntity));
+            _cPainComp = client.EntMan.GetComponent<PainComponent>(_cPainEntity);
+            _cDamageableComp = client.EntMan.GetComponent<DamageableComponent>(_cPainEntity);
+        });
+        var cOverlayMan = client.ResolveDependency<IOverlayManager>();
         _cDamageOverlay = cOverlayMan.GetOverlay<DamageOverlay>();
 
         await _pair.ReallyBeIdle(5);
@@ -155,6 +166,8 @@ public sealed class PainTests
     {
         await _pair.CleanReturnAsync();
     }
+
+    // todo: put tests in alphabetical order
 
     [Test]
     [Repeat(50)] // temp
@@ -205,7 +218,7 @@ public sealed class PainTests
 
         // Add the modifier.
         var modifier = new PainModifier(TimeSpan.FromHours(1), modifierStrength, modifierType);
-        _sPainSystem.AddPainModifier(_sPainEntity, modifier);
+        _painSystem.AddPainModifier(_sPainEntity, modifier);
         await _pair.RunTicksSync(5);
 
         // Make sure the modifier was applied correctly.
@@ -220,10 +233,11 @@ public sealed class PainTests
         Assert.Multiple(() =>
         {
             Assert.That(_sPainComp.PainModifiers.Single(), Is.EqualTo(modifier));
+            Assert.That(_cPainComp.PainModifiers.Single(), Is.EqualTo(modifier));
             AssertPainVarsMatchExpected(initialDamage, expectedPerceivedPain);
         });
 
-        _sPainSystem.ClearPainModifiers(_sPainEntity);
+        _painSystem.ClearPainModifiers(_sPainEntity);
         await _pair.RunTicksSync(5);
         await WaitUntilPainLevelReachesTarget(initialDamage);
 
@@ -231,6 +245,7 @@ public sealed class PainTests
         Assert.Multiple(() =>
         {
             Assert.That(_sPainComp.PainModifiers, Is.Empty);
+            Assert.That(_cPainComp.PainModifiers, Is.Empty);
             AssertPainVarsMatchExpected(initialDamage);
         });
     }
@@ -301,6 +316,7 @@ public sealed class PainTests
         // Anything over that *should* be visible.
         var highestPainLevel = _sPainComp.PainLevels.Last();
         await SetDamage(highestPainLevel.Threshold);
+        await _pair.SyncTicks();
 
         // `PainComponent.CurrentPainLevelIdx` increases one step at a time every `PainComponent.PainLevelUpdateRate` seconds,
         // so wait for it to catch up, running the standard assert checks after each level change.
@@ -328,17 +344,17 @@ public sealed class PainTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(_sMobStateSystem.IsAlive(_sPainEntity), Is.True);
+            Assert.That(_mobStateSystem.IsAlive(_sPainEntity), Is.True);
             AssertPainVarsMatchExpected(initialDamage);
         });
 
-        await _pair.Server.WaitPost(() => _sMobStateSystem.ChangeMobState(_sPainEntity, MobState.Dead));
+        await _pair.Server.WaitPost(() => _mobStateSystem.ChangeMobState(_sPainEntity, MobState.Dead));
         await _pair.RunTicksSync(5);
 
         // On death, `PainSystem` should have cleared out all pain vars other than `BasePain`.
         Assert.Multiple(() =>
         {
-            Assert.That(_sMobStateSystem.IsDead(_sPainEntity), Is.True);
+            Assert.That(_mobStateSystem.IsDead(_sPainEntity), Is.True);
             AssertPainVarsMatchExpected(initialDamage, 0);
         });
 
@@ -351,14 +367,14 @@ public sealed class PainTests
             AssertPainVarsMatchExpected(afterDeathDamage, 0);
         }
 
-        await _pair.Server.WaitPost(() => _sMobStateSystem.ChangeMobState(_sPainEntity, MobState.Alive));
+        await _pair.Server.WaitPost(() => _mobStateSystem.ChangeMobState(_sPainEntity, MobState.Alive));
         await _pair.RunTicksSync(5);
         await WaitUntilPainLevelReachesTarget(afterDeathDamage);
 
         // On revival, everything should go back to normal.
         Assert.Multiple(() =>
         {
-            Assert.That(_sMobStateSystem.IsAlive(_sPainEntity), Is.True);
+            Assert.That(_mobStateSystem.IsAlive(_sPainEntity), Is.True);
             AssertPainVarsMatchExpected(afterDeathDamage);
         });
     }
@@ -371,14 +387,14 @@ public sealed class PainTests
         expectedPerceivedPain ??= expectedBasePain;
         targetPainLevelIdx ??= GetHighestPainLevelForDamageValue(expectedPerceivedPain.Value).Idx;
 
-        if (_sPainComp.CurrentPainLevelIdx == targetPainLevelIdx)
+        if (_sPainComp.CurrentPainLevelIdx == targetPainLevelIdx && _cPainComp.CurrentPainLevelIdx == targetPainLevelIdx)
             return; // misson accomplished?
 
         // Five second timeout limit just in case something goes wrong and it never actually changes.
         var cancellationToken = new CancellationTokenSource();
-        cancellationToken.CancelAfter(TimeSpan.FromSeconds(500));
+        cancellationToken.CancelAfter(TimeSpan.FromSeconds(500)); // todo: change back to 5
 
-        while (_sPainComp.CurrentPainLevelIdx != targetPainLevelIdx)
+        while (_sPainComp.CurrentPainLevelIdx != targetPainLevelIdx && _cPainComp.CurrentPainLevelIdx != targetPainLevelIdx)
         {
             // Make sure that everything remains correct after each level change.
             AssertPainVarsMatchExpected(expectedBasePain, expectedPerceivedPain, _sPainComp.CurrentPainLevelIdx);
@@ -399,10 +415,10 @@ public sealed class PainTests
         // the thresholds of the current and next pain level (or no max value if `CurrentPainLevelIdx` is the highest it gets).
         var minOverlayPain = expectedPainLevelIdxNotNull == 0
             ? FixedPoint2.Zero // First in the list, so clamp to (0, currentLevel.Threshold)
-            : _sPainComp.PainLevels[expectedPainLevelIdxNotNull].Threshold;
-        var maxOverlayPain = expectedPainLevelIdxNotNull == _sPainComp.PainLevels.Count - 1
+            : _cPainComp.PainLevels[expectedPainLevelIdxNotNull].Threshold;
+        var maxOverlayPain = expectedPainLevelIdxNotNull == _cPainComp.PainLevels.Count - 1
             ? FixedPoint2.MaxValue // Last in the list, so clamp to (currentLevel.Threshold, MaxValue)
-            : _sPainComp.PainLevels[expectedPainLevelIdxNotNull + 1].Threshold;
+            : _cPainComp.PainLevels[expectedPainLevelIdxNotNull + 1].Threshold;
 
         // That's then converted to a float percentage for use in the overlay.
         var expectedOverlayPainLevel = (FixedPoint2.Clamp(expectedPerceivedPainNotNull, minOverlayPain, maxOverlayPain) / 100).Float();
@@ -415,6 +431,10 @@ public sealed class PainTests
             Assert.That(_sPainComp.BasePain, Is.EqualTo(expectedBasePain));
             Assert.That(_sPainComp.PerceivedPain, Is.EqualTo(expectedPerceivedPainNotNull));
             Assert.That(_sPainComp.CurrentPainLevelIdx, Is.EqualTo(expectedPainLevelIdxNotNull));
+
+            Assert.That(_cPainComp.BasePain, Is.EqualTo(expectedBasePain));
+            Assert.That(_cPainComp.PerceivedPain, Is.EqualTo(expectedPerceivedPainNotNull));
+            Assert.That(_cPainComp.CurrentPainLevelIdx, Is.EqualTo(expectedPainLevelIdxNotNull));
             Assert.That(_cDamageOverlay.PainLevel, Is.EqualTo(expectedOverlayPainLevel));
         });
     }
@@ -422,7 +442,7 @@ public sealed class PainTests
     private async Task WaitForPainLevelChange(CancellationToken ct)
     {
         var initialPainLevel = _sPainComp.CurrentPainLevelIdx;
-        while (_sPainComp.CurrentPainLevelIdx == initialPainLevel)
+        while (_sPainComp.CurrentPainLevelIdx == initialPainLevel || _cPainComp.CurrentPainLevelIdx != _sPainComp.CurrentPainLevelIdx)
         {
             Assert.DoesNotThrow(ct.ThrowIfCancellationRequested, $"{nameof(WaitForPainLevelChange)} timed out!");
             await _pair.RunTicksSync(_pair.SecondsToTicks(0.1f));
@@ -433,7 +453,10 @@ public sealed class PainTests
     {
         var damageGroupPrototype = _pair.Server.ProtoMan.Index(damageGroupOverride ?? "Brute");
         var specifier = new DamageSpecifier(damageGroupPrototype, amount);
-        _sDamageableSystem.SetDamage(_sPainEntity, _sDamageableComp, specifier);
+
+        // """prediction"""
+        await _pair.Client.WaitPost(() => _damageableSystem.SetDamage(_cPainEntity, _cDamageableComp, specifier));
+        await _pair.Server.WaitPost(() => _damageableSystem.SetDamage(_sPainEntity, _sDamageableComp, specifier));
         await _pair.RunTicksSync(5);
     }
 

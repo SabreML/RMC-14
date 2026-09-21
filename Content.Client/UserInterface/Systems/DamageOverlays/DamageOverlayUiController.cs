@@ -1,3 +1,4 @@
+using Content.Shared._RMC14.Damage;
 using Content.Shared._RMC14.Medical.Pain;
 using Content.Shared.Damage;
 using Content.Shared.FixedPoint;
@@ -31,7 +32,7 @@ public sealed class DamageOverlayUiController : UIController
         SubscribeLocalEvent<LocalPlayerDetachedEvent>(OnPlayerDetached);
         SubscribeLocalEvent<MobStateChangedEvent>(OnMobStateChanged);
         SubscribeLocalEvent<MobThresholdChecked>(OnThresholdCheck);
-        SubscribeLocalEvent<PainLevelChangedEvent>(OnPainLevelChanged); // RMC14
+        SubscribeLocalEvent<DamageOverlayUpdateEvent>(OnUpdateRequest); // RMC14
     }
 
     private void OnPlayerAttach(LocalPlayerAttachedEvent args)
@@ -67,7 +68,7 @@ public sealed class DamageOverlayUiController : UIController
     }
 
     // RMC14
-    private void OnPainLevelChanged(ref PainLevelChangedEvent args)
+    private void OnUpdateRequest(ref DamageOverlayUpdateEvent args)
     {
         if (args.Ent != _playerManager.LocalEntity)
             return;
