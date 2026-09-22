@@ -14,19 +14,22 @@ namespace Content.Shared._RMC14.Medical.Pain;
 public sealed partial class PainComponent : Component
 {
     /// <summary>
-    /// Base pain value derived from overall damage to the body, without accounting for any <see cref="PainModifiers"/>.
+    /// Base pain value derived from overall body damage multiplied by <see cref="DamageGroupPainMultipliers"/> per damage group,
+    /// without accounting for any <see cref="PainModifiers"/>.
     /// </summary>
     [ViewVariables, AutoNetworkedField]
     public FixedPoint2 BasePain = FixedPoint2.Zero;
 
     /// <summary>
-    /// Value representing how much pain the player actually <i>feels</i> after applying any <see cref="PainModifiers"/>
+    /// 0 to 100 value representing how much pain the player actually <i>feels</i> after applying any <see cref="PainModifiers"/>
     /// like painkillers to <see cref="BasePain"/>.
-    /// <para>
-    /// This is clamped between 0 (no pain) and 100 (maximum pain), and is used to select the highest <see cref="PainLevel"/>
-    /// in <see cref="PainLevels"/> where <c>PainLevel.Threshold &lt;= PerceivedPain</c>.
-    /// </para>
     /// </summary>
+    /// <remarks>
+    /// This is used to select the highest <see cref="PainLevel"/> in <see cref="PainLevels"/> where <c>PainLevel.Threshold &lt;= PerceivedPain</c>.
+    /// <para>
+    /// Please use <see cref="PainSystem.SetPerceivedPain(Entity{PainComponent}, FixedPoint2)"/> when setting this.
+    /// </para>
+    /// </remarks>
     [ViewVariables, AutoNetworkedField]
     public FixedPoint2 PerceivedPain = FixedPoint2.Zero;
 
@@ -35,8 +38,7 @@ public sealed partial class PainComponent : Component
     /// This is set based on the highest <see cref="PainLevel.Threshold"/> passed by <see cref="PerceivedPain"/>.
     /// </summary>
     /// <remarks>
-    /// Please use <see cref="PainSystem.SetCurrentPainLevel(Entity{PainComponent}, int)"/> when setting this
-    /// so that the user's pain overlay can be updated with <see cref="PainLevelChangedEvent"/>.
+    /// Please use <see cref="PainSystem.SetCurrentPainLevelIdx(Entity{PainComponent}, int)"/> when setting this.
     /// </remarks>
     [ViewVariables, AutoNetworkedField]
     public int CurrentPainLevelIdx = 0;
@@ -46,8 +48,9 @@ public sealed partial class PainComponent : Component
     /// of pain felt by the player in <see cref="PerceivedPain"/>.
     /// </summary>
     /// <remarks>
-    /// Due to painkiller <see cref="EntityEffect"/>s not being predictable, the values of any <see cref="PainModifier"/>s
-    /// caused by them may be out of sync on the Client's side. <see cref="PainModifier.ExpireAt"/> in particular.
+    /// Due to painkiller <see cref="EntityEffect"/>s (seemingly) not being predictable, the values of any <see cref="PainModifier"/>s
+    /// caused by them may be out of sync on the Client's side. <see cref="PainModifier.ExpireAt"/> in particular. <br/>
+    /// This is all handled already so doesn't cause any problems, it's just worth noting.
     /// </remarks>
     /// <seealso cref="PainSystem.UpdatePerceivedPain(Entity{PainComponent})"/>
     [ViewVariables, AutoNetworkedField]
@@ -58,11 +61,15 @@ public sealed partial class PainComponent : Component
     /// <see cref="PerceivedPain"/> passes their <see cref="PainLevel.Threshold"/>.<br/>
     /// Only one <see cref="PainLevel"/> can be active at a time, with the currently active level indicated by its index in <see cref="CurrentPainLevelIdx"/>.
     /// </summary>
+    /// <remarks>
+    /// When creating a new <c>PainLevels</c> list in a .yml file or otherwise, each level in the list must be positioned in order of their <c>Threshold</c> values,
+    /// and the lowest level must have a <c>Threshold</c> of 0 for a base "no pain" state,
+    /// </remarks>
     [DataField(required: true)]
     public List<PainLevel> PainLevels = [];
 
     /// <summary>
-    /// Dictionary of <see cref="DamageGroupPrototype"/>s, and a multiplier for the pain caused by each when inflicted.<br/>
+    /// Dictionary of <see cref="DamageGroupPrototype"/>s and a multiplier for the <see cref="BasePain"/> amount caused by each group when inflicted.<br/>
     /// 0 == No pain | 1 == 1:1 damage to pain | 1.5 == 50% increase | etc.
     /// </summary>
     [DataField, AutoNetworkedField]
@@ -76,11 +83,11 @@ public sealed partial class PainComponent : Component
 
     /// <summary>
     /// Controls the rate at which <see cref="PainModifierType.PainReduction"/> <see cref="PainModifier"/>s lose effectiveness as <see cref="BasePain"/> increases.
-    /// <para>
+    /// </summary>
+    /// <remarks>
     /// The actual calculation can be seen in <see cref="PainSystem.UpdatePerceivedPain(Entity{PainComponent})"/>, but it essentially works out as:<br/>
     /// "For every point of (<see cref="BasePain"/> + Increase modifiers), reduction strength decreases by <see cref="PainReductionDecreaseRate"/>".
-    /// </para>
-    /// </summary>
+    /// </remarks>
     [DataField, AutoNetworkedField]
     public FixedPoint2 PainReductionDecreaseRate = FixedPoint2.New(0.25);
 
@@ -104,6 +111,9 @@ public sealed partial class PainComponent : Component
     [AutoPausedField]
     public TimeSpan NextPainLevelUpdateTime = new(0);
 
+    /// <summary>
+    /// Prototype ID of the health alert icon on the right side of the player's screen.
+    /// </summary>
     [DataField, AutoNetworkedField]
     public ProtoId<AlertPrototype> Alert = "HumanoidPainHealth";
 
@@ -112,7 +122,7 @@ public sealed partial class PainComponent : Component
     /// can check if the value has changed between state updates.
     /// </summary>
     /// <remarks>
-    /// This field is specifically <i>not</i> networked, and should ideally be client-side only.
+    /// This field is specifically <i>not</i> networked, and should be client-side only.
     /// </remarks>
     /// <seealso cref="PreviousPainLevelIdx"/>
     public FixedPoint2 PreviousPerceivedPain; // todo: check if this needs a vv attribute
@@ -122,7 +132,7 @@ public sealed partial class PainComponent : Component
     /// can check if the value has changed between state updates.
     /// </summary>
     /// <remarks>
-    /// This field is specifically <i>not</i> networked, and should ideally be client-side only.
+    /// This field is specifically <i>not</i> networked, and should be client-side only.
     /// </remarks>
     /// <seealso cref="PreviousPerceivedPain"/>
     public int PreviousPainLevelIdx; // todo: check if this needs a vv attribute
