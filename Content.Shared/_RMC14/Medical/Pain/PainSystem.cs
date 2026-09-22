@@ -86,6 +86,9 @@ public sealed partial class PainSystem : EntitySystem
     /// </returns>
     public (PainLevel Level, int Index) GetHighestPainLevelReached(PainComponent painComp, FixedPoint2? painValueOverride = null)
     {
+        if (painValueOverride < FixedPoint2.Zero)
+            throw new ArgumentOutOfRangeException(nameof(painValueOverride), painValueOverride, "Pain values shouldn't ever go below zero!");
+
         var painValue = painValueOverride ?? painComp.PerceivedPain;
         for (var i = painComp.PainLevels.Count - 1; i >= 0; i--)
         {
@@ -95,8 +98,7 @@ public sealed partial class PainSystem : EntitySystem
         }
 
         // should have been caught by the assertion in `OnInit()` below, but just it wasn't (and to appease the compiler)
-        throw new ArgumentException(
-            $"The first pain level in {nameof(PainComponent)}.{nameof(PainComponent.PainLevels)} must have a `Threshold` value of 0.");
+        throw new InvalidOperationException($"The first pain level in {nameof(PainComponent)}.{nameof(PainComponent.PainLevels)} must have a `Threshold` value of 0.");
     }
 
     private void OnInit(Entity<PainComponent> ent, ref ComponentInit args)

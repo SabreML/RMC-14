@@ -1,17 +1,22 @@
 #nullable enable
 using Content.Client.UserInterface.Systems.DamageOverlays.Overlays;
 using Content.IntegrationTests.Pair;
+using Content.Shared._RMC14.Marines;
+using Content.Shared._RMC14.Marines.Orders;
 using Content.Shared._RMC14.Medical.Pain;
+using Content.Shared.Actions;
 using Content.Shared.Damage;
 using Content.Shared.Damage.Prototypes;
 using Content.Shared.FixedPoint;
 using Content.Shared.Mobs;
+using Content.Shared.Mobs.Components;
 using Content.Shared.Mobs.Systems;
 using Content.Shared.StatusEffect;
 using Robust.Client.Graphics;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Map;
 using Robust.Shared.Prototypes;
+using Robust.Shared.Timing;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -25,6 +30,8 @@ public sealed class PainTests
 {
     private const string TestPainEntityId = "TestPainEntity";
     private const string SlowUpdateEntityId = "SlowUpdateEntity";
+    private const string PainKnockOutEntityId = "PainKnockOutEntity";
+    private const string MarineOrdersEntityId = "MarineOrdersEntity";
 
     [TestPrototypes]
     private const string Prototypes = $"""
@@ -45,6 +52,7 @@ public sealed class PainTests
     - PainLevel2
     - PainLevel3
     - PainLevel4
+    - PainKnockOut
   - type: Pain
     updateRate: 0
     painLevelUpdateRate: 0
@@ -79,6 +87,28 @@ public sealed class PainTests
   - type: Pain
     painLevelUpdateRate: 2
 
+- type: entity
+  parent: {TestPainEntityId}
+  id: {PainKnockOutEntityId}
+  components:
+  - type: Pain
+    painLevels:
+    - threshold: 0
+      levelEffects: []
+    - threshold: 20
+      levelEffects:
+      - !type:GenericStatusEffect
+        key: PainKnockOut
+        component: PainKnockOut
+        time: 4
+
+- type: entity
+  parent: {TestPainEntityId}
+  id: {MarineOrdersEntityId}
+  components:
+  - type: Marine
+  - type: MarineOrders
+
 - type: statusEffect
   id: PainLevel1
 - type: statusEffect
@@ -98,6 +128,7 @@ public sealed class PainTests
     private PainSystem _painSystem = default!;
     private DamageableSystem _damageableSystem = default!;
     private MobStateSystem _mobStateSystem = default!;
+    private StatusEffectsSystem _statusEffectSystem = default!; // TODO RMC14: Change to new status effect system when more is ported.
 
     private EntityUid _sPlayerEntity;
     private PainComponent _sPainComp = default!;
@@ -105,7 +136,6 @@ public sealed class PainTests
 
     private EntityUid _cPlayerEntity;
     private PainComponent _cPainComp = default!;
-    private DamageableComponent _cDamageableComp = default!;
     private DamageOverlay _cDamageOverlay = default!;
 
     private static PainModifierType[] GetPainModifierTypes()
@@ -120,9 +150,10 @@ public sealed class PainTests
         var server = _pair.Server;
         var client = _pair.Client;
 
-        _painSystem = server.EntMan.System<PainSystem>();
-        _damageableSystem = server.EntMan.System<DamageableSystem>();
-        _mobStateSystem = server.EntMan.System<MobStateSystem>();
+        _painSystem = server.System<PainSystem>();
+        _damageableSystem = server.System<DamageableSystem>();
+        _mobStateSystem = server.System<MobStateSystem>();
+        _statusEffectSystem = server.System<StatusEffectsSystem>();
         var cOverlayMan = client.ResolveDependency<IOverlayManager>();
 
         NetEntity playerNetEntity = default;
@@ -140,7 +171,6 @@ public sealed class PainTests
         {
             _cPlayerEntity = client.EntMan.GetEntity(playerNetEntity);
             _cPainComp = client.EntMan.GetComponent<PainComponent>(_cPlayerEntity);
-            _cDamageableComp = client.EntMan.GetComponent<DamageableComponent>(_cPlayerEntity);
             _cDamageOverlay = cOverlayMan.GetOverlay<DamageOverlay>();
         });
 
@@ -257,7 +287,7 @@ public sealed class PainTests
         var expectedPerceivedPain = FixedPoint2.Clamp(modifierType switch
         {
             PainModifierType.PainIncrease => initialDamage + modifierStrength,
-            PainModifierType.PainReduction => initialDamage - FixedPoint2.Max(0, -initialDamage * _sPainComp.PainReductionDecreaseRate + modifierStrength),
+            PainModifierType.PainReduction => initialDamage - GetPainReductionModifierStrength(initialDamage, modifierStrength),
             _ => throw new InvalidOperationException()
         }, 0, 100);
 
@@ -289,13 +319,11 @@ public sealed class PainTests
 
         // Below 5 damage shouldn't be visible in the overlay.
         await SetDamage(4);
-        await _pair.SyncTicks();
         AssertPainVarsMatchExpected(4);
 
         // Anything over that *should* be visible.
         var highestPainLevel = _sPainComp.PainLevels.Last();
         await SetDamage(highestPainLevel.Threshold);
-        await _pair.SyncTicks();
 
         // `PainComponent.CurrentPainLevelIdx` increases one step at a time every `PainComponent.PainLevelUpdateRate` seconds,
         // so wait for it to catch up, running the standard assert checks after each level change.
@@ -308,23 +336,126 @@ public sealed class PainTests
     }
 
     [Test]
+    [TestOf(typeof(HoldOrderComponent)), TestOf(typeof(SharedMarineOrdersSystem))]
+    public async Task TestHoldOrderPainReduction()
+    {
+        await SetUp();
+        var transformSystem = _pair.Server.System<SharedTransformSystem>();
+        var actionsSystem = _pair.Server.System<SharedActionsSystem>();
+
+        // Move the player onto a real map so that `GetEntitiesInRange()` calls actually work.
+        await _pair.CreateTestMap();
+        transformSystem.SetMapCoordinates(_sPlayerEntity, _pair.TestMap.MapCoords);
+
+        // Add some pain to `_sPlayerEntity`.
+        await SetDamage(SmallDamageAmount);
+        AssertPainVarsMatchExpected(SmallDamageAmount);
+
+        // Spawn a second entity with `MarineOrdersComponent`.
+        EntityUid ordersEntity = default!;
+        MarineOrdersComponent ordersComp = default!;
+        await _pair.Server.WaitPost(() =>
+        {
+            ordersEntity = _pair.Server.EntMan.SpawnEntity(MarineOrdersEntityId, _pair.TestMap.MapCoords);
+            ordersComp = _pair.Server.EntMan.GetComponent<MarineOrdersComponent>(ordersEntity);
+
+            // Only entities with `MarineComponent` actually get affected by orders, so `_sPlayerEntity` needs that added.
+            _pair.Server.EntMan.AddComponent<MarineComponent>(_sPlayerEntity);
+        });
+        await _pair.RunTicksSync(5);
+
+        // Get the hold order action, which should have been given to `ordersEntity` when `MarineOrdersComponent` was added.
+        var holdAction = actionsSystem.GetAction(ordersComp.HoldActionEntity);
+        Assert.That(holdAction, Is.Not.Null);
+
+        // Activate the hold order.
+        await _pair.Server.WaitPost(() => actionsSystem.PerformAction(ordersEntity, holdAction.Value));
+        await _pair.RunTicksSync(5);
+
+        // The entity who made the order and all entities within `OrderRange` should have recieved the order effect component.
+        Assert.Multiple(() =>
+        {
+            Assert.That(_pair.Server.EntMan.HasComponent<HoldOrderComponent>(_sPlayerEntity), Is.True);
+            Assert.That(_pair.Server.EntMan.HasComponent<HoldOrderComponent>(ordersEntity), Is.True);
+        });
+        var playerHoldOrderComp = _pair.Server.EntMan.GetComponent<HoldOrderComponent>(_sPlayerEntity);
+
+        // And said order effect component should be adding a pain reduction modifier.
+        Assert.Multiple(() =>
+        {
+            // `_sPlayerEnt`'s initial `SmallDamageAmount` pain should have been reduced by the modifier.
+            AssertPainVarsMatchExpected(
+                SmallDamageAmount,
+                SmallDamageAmount - GetPainReductionModifierStrength(SmallDamageAmount, playerHoldOrderComp.PainModifier));
+
+            // `ordersEntity` doesn't have any pain, but should still have received the modifier.
+            Assert.That(_pair.Server.EntMan.GetComponent<PainComponent>(ordersEntity).PainModifiers.Single().Type, Is.EqualTo(PainModifierType.PainReduction));
+        });
+    }
+
+    [Test]
+    [TestOf(typeof(PainKnockOutComponent)), TestOf(typeof(PainKnockOutSystem))]
+    public async Task TestPainKnockout()
+    {
+        await SetUp(PainKnockOutEntityId);
+        var sThresholdSystem = _pair.Server.System<MobThresholdSystem>();
+        var sThresholdComp = _pair.Server.EntMan.GetComponent<MobThresholdsComponent>(_sPlayerEntity);
+
+        var initialCritThreshold = sThresholdSystem.GetThresholdForState(_sPlayerEntity, MobState.Critical, sThresholdComp);
+        Assert.That(_mobStateSystem.IsAlive(_sPlayerEntity), Is.True);
+
+        // Increase pain enough for the threshold for `PainKnockOut` to be applied.
+        await SetDamage(BigDamageAmount);
+        await WaitUntilPainLevelReachesTarget(BigDamageAmount);
+
+        // `PainKnockOutComponent` being added should have forced the player into critical, and set their crit threshold to
+        // 1 above their alive threshold, preventing them from leaving it. (until the component is removed)
+        Assert.Multiple(() =>
+        {
+            Assert.That(_mobStateSystem.IsCritical(_sPlayerEntity), Is.True);
+            Assert.That(sThresholdSystem.GetThresholdForState(_sPlayerEntity, MobState.Critical, sThresholdComp),
+                Is.EqualTo(sThresholdSystem.GetThresholdForState(_sPlayerEntity, MobState.Alive, sThresholdComp) + 1)
+                .And.Not.EqualTo(initialCritThreshold));
+        });
+
+        // Remove all damage.
+        await SetDamage(0);
+        AssertPainVarsMatchExpected(0);
+
+        // Loop until the `PainKnockOut` effect is removed, with a max timout just in case it gets stuck.
+        // Same sort of idea as `WaitForPainLevelChange()`.
+        var sw = new Stopwatch();
+        sw.Start();
+        while (_statusEffectSystem.HasStatusEffect(_sPlayerEntity, "PainKnockOut"))
+        {
+            Assert.That(sw.Elapsed, Is.LessThan(TimeSpan.FromSeconds(5)), "Timed out waiting for the `PainKnockOut` status effect to be removed!");
+            await _pair.RunTicksSync(_pair.SecondsToTicks(0.1f));
+        }
+
+        // Make sure that everything's gone back to normal.
+        Assert.Multiple(() =>
+        {
+            Assert.That(_mobStateSystem.IsAlive(_sPlayerEntity), Is.True);
+            Assert.That(sThresholdSystem.GetThresholdForState(_sPlayerEntity, MobState.Critical, sThresholdComp), Is.EqualTo(initialCritThreshold));
+        });
+    }
+
+    [Test]
     [TestOf(typeof(PainLevel))]
     public async Task TestPainLevels()
     {
         await SetUp();
-        // TODO RMC14: Change to new status effect system when more is ported.
-        var statusEffectSystem = _pair.Server.EntMan.System<StatusEffectsSystem>();
 
         var indexedPainLevels = _sPainComp.PainLevels
             .Select((level, idx) => (level, idx));
 
         // Test everything going from zero to max.
-        await TestPainLevel(indexedPainLevels.Skip(1)); // Skip the first level since we're there already.
+        await TestEachPainLevel(indexedPainLevels.Skip(1)); // Skip the first level since we're there already.
 
         // And the same in the other direction.
-        await TestPainLevel(indexedPainLevels.Reverse().Skip(1)); // Skip the last level since we're there already.
+        await TestEachPainLevel(indexedPainLevels.Reverse().Skip(1)); // Skip the last level since we're there already.
 
-        async Task TestPainLevel(IEnumerable<(PainLevel, int)> painLevels)
+        async Task TestEachPainLevel(IEnumerable<(PainLevel, int)> painLevels)
         {
             foreach (var (level, idx) in painLevels)
             {
@@ -334,7 +465,7 @@ public sealed class PainTests
                 // and applies the level's `EntityEffect`s.
                 await WaitUntilPainLevelReachesTarget(level.Threshold, targetPainLevelIdx: idx);
                 if (level.LevelEffects.Count != 0)
-                    Assert.That(statusEffectSystem.HasStatusEffect(_sPlayerEntity, $"PainLevel{idx}"));
+                    Assert.That(_statusEffectSystem.HasStatusEffect(_sPlayerEntity, $"PainLevel{idx}"), Is.True);
             }
         }
     }
@@ -405,7 +536,7 @@ public sealed class PainTests
         var initialPainLevel = _sPainComp.CurrentPainLevelIdx;
         while (_sPainComp.CurrentPainLevelIdx == initialPainLevel || _cPainComp.CurrentPainLevelIdx != _sPainComp.CurrentPainLevelIdx)
         {
-            Assert.DoesNotThrow(ct.ThrowIfCancellationRequested, $"{nameof(WaitForPainLevelChange)} timed out!");
+            Assert.That(ct.IsCancellationRequested, Is.False, $"{nameof(WaitForPainLevelChange)} timed out!");
             await _pair.RunTicksSync(_pair.SecondsToTicks(0.1f));
         }
     }
@@ -415,25 +546,16 @@ public sealed class PainTests
         var damageGroupPrototype = _pair.Server.ProtoMan.Index(damageGroupOverride ?? "Brute");
         var specifier = new DamageSpecifier(damageGroupPrototype, amount);
 
-        // """prediction"""
-        await _pair.Client.WaitPost(() => _damageableSystem.SetDamage(_cPlayerEntity, _cDamageableComp, specifier));
         await _pair.Server.WaitPost(() => _damageableSystem.SetDamage(_sPlayerEntity, _sDamageableComp, specifier));
         await _pair.RunTicksSync(5);
     }
 
-    /*
-    Todo (potentially):
-
-    [X] Damage groups => `BasePain` test with correct modifiers
-    [X] BasePain == PerceivedPain after update cycle
-    [X] Pain increase modifier test
-    [X] Pain reduction modifier falloff test
-    [X] Ensure assert fails if painlevels aren't in order
-    [X] Thresholds and threshold effects work and apply properly
-    [X] Vars clear and resets correctly on death + revive. Test dying with pain and with no pain
-    [ ] Test painknockoutcomponent?
-    [X] Client pain overlay test (increases on damage up to pain level threshold, removed on heal)
-    */
+    // The effective strength of `PainReduction` pain modifiers goes down as pain increases.
+    // This returns how much should be subtracted from `_sPainEntity`'s `PainComponent.BasePain` when given a total reduction modifier of `modifierStrength`.
+    private FixedPoint2 GetPainReductionModifierStrength(FixedPoint2 basePain, FixedPoint2 modifierStrength)
+    {
+        return FixedPoint2.Clamp(-basePain * _sPainComp.PainReductionDecreaseRate + modifierStrength, 0, basePain);
+    }
 }
 
 [RegisterComponent]

@@ -125,7 +125,7 @@ public sealed partial class PainComponent : Component
     /// This field is specifically <i>not</i> networked, and should be client-side only.
     /// </remarks>
     /// <seealso cref="PreviousPainLevelIdx"/>
-    public FixedPoint2 PreviousPerceivedPain; // todo: check if this needs a vv attribute
+    public FixedPoint2 PreviousPerceivedPain;
 
     /// <summary>
     /// The previous <see cref="CurrentPainLevelIdx"/>, used so that <see cref="PainSystem.OnPainState(Entity{PainComponent}, ref AfterAutoHandleStateEvent)"/>
@@ -135,7 +135,7 @@ public sealed partial class PainComponent : Component
     /// This field is specifically <i>not</i> networked, and should be client-side only.
     /// </remarks>
     /// <seealso cref="PreviousPerceivedPain"/>
-    public int PreviousPainLevelIdx; // todo: check if this needs a vv attribute
+    public int PreviousPainLevelIdx;
 }
 
 [DataRecord]
