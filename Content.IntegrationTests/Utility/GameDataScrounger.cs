@@ -86,7 +86,18 @@ public static partial class GameDataScrounger
         if (typeof(T).GetCustomAttribute<PrototypeAttribute>() is { Type: { } ty })
             return PrototypesOfKind(ty);
 
-        return PrototypesOfKind(PrototypeUtility.CalculatePrototypeName(typeof(T).Name));
+        // TODO RMC14: Change to use `PrototypeUtility` when the engine gets updated.
+        return PrototypesOfKind(/*PrototypeUtility.*/CalculatePrototypeName(typeof(T).Name));
+
+        static string CalculatePrototypeName(string type) // RMC14
+        {
+            const string prototypeNameEnding = "Prototype";
+            var name = type.AsSpan();
+            if (!type.EndsWith(prototypeNameEnding))
+                return $"{char.ToLowerInvariant(name[0])}{name.Slice(1)}";
+
+            return $"{char.ToLowerInvariant(name[0])}{name.Slice(1, name.Length - prototypeNameEnding.Length - 1)}";
+        }
     }
 
     /// <summary>
@@ -97,7 +108,7 @@ public static partial class GameDataScrounger
         if (NoScrounging)
             return Array.Empty<string>();
 
-        lock (DataLock)
+        using (DataLock.EnterScope()) // TODO RMC14: Change to lock object when the engine gets updated.
         {
             Scrounge();
 
@@ -119,7 +130,7 @@ public static partial class GameDataScrounger
         if (NoScrounging)
             return Array.Empty<string>();
 
-        lock (DataLock)
+        using (DataLock.EnterScope()) // TODO RMC14: Change to lock object when the engine gets updated.
         {
             if (_entitiesWithComponentIndex is { } index)
             {
