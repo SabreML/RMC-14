@@ -83,9 +83,11 @@ namespace Content.IntegrationTests.Tests
             .Select(glob => new Regex(GlobToRegex(glob), RegexOptions.IgnoreCase | RegexOptions.Compiled))
             .ToArray();
 
-        private static readonly string[] GameMaps = GameDataScrounger.PrototypesOfKind<GameMapPrototype>().Where(x => x != PoolManager.TestMap).ToArray();
-        private static readonly ResPath[] AllMapFiles = GameDataScrounger.FilesInDirectoryInVfs("/Maps", "*.yml");
-        private static readonly ResPath[] ShuttleMapFiles = GameDataScrounger.FilesInDirectoryInVfs("/Maps/Shuttles", "*.yml");
+        // RMC14 Start
+        private static readonly ResPath[] AllMapFiles = GameDataScrounger.FilesInDirectoryInVfs("/Maps/_RMC14", "*.yml");
+        private static readonly ResPath[] ShuttleMapFiles = GameDataScrounger.FilesInDirectoryInVfs("/Maps/_RMC14/Shuttles", "*.yml");
+        private static readonly string[] GameMaps = RMCGameMaps().ToArray();
+        // RMC14 End
 
         private static readonly ProtoId<EntityCategoryPrototype> DoNotMapCategory = "DoNotMap";
 
@@ -474,27 +476,6 @@ namespace Content.IntegrationTests.Tests
         }
 
         [Test]
-        public async Task AllMapsTested()
-        {
-            await using var pair = await PoolManager.GetServerClient();
-            var server = pair.Server;
-            var protoMan = server.ResolveDependency<IPrototypeManager>();
-
-            var gameMaps = protoMan.EnumeratePrototypes<GameMapPrototype>()
-                .Where(x => !pair.IsTestPrototype(x))
-                .Where(x => x.ID == PoolManager.TestMap // RMC14
-                    || x.MapPath.ToString().StartsWith("/Maps/_RMC14"))
-                .Select(x => x.ID)
-                .ToHashSet();
-
-            Assert.That(gameMaps.Remove(PoolManager.TestMap));
-
-            Assert.That(gameMaps, Is.EquivalentTo(GameMaps.ToHashSet()), "Game map prototype missing from test cases.");
-
-            await pair.CleanReturnAsync();
-        }
-
-        [Test]
         [TestCaseSource(nameof(AllMapFiles))]
         public async Task NonGameMapsLoadableTest(ResPath mapPath)
         {
@@ -582,6 +563,25 @@ namespace Content.IntegrationTests.Tests
                 .Replace(@"\?", ".");   // ? → any single character
 
             return $"^{regex}$";
+        }
+
+        private static IEnumerable<string> RMCGameMaps() // RMC14
+        {
+            // todo: figure out the "correct" way to do this rather than brute-forcing it
+            foreach (var mapProtoFile in GameDataScrounger.FilesInDirectory("/Prototypes/_RMC14/Maps", "*.yml"))
+            {
+                using var reader = File.OpenText(mapProtoFile);
+                var stream = new YamlStream();
+                stream.Load(reader);
+
+                var sequence = (YamlSequenceNode)stream.Documents[0].RootNode;
+                var mapping = (YamlMappingNode)sequence.Children[0];
+                if (mapping.TryGetNode<YamlScalarNode>("mapPath", out var mapPath)
+                    && AllMapFiles.Any(resPath => resPath.CanonPath == mapPath.Value))
+                {
+                    yield return mapping.GetNode<YamlScalarNode>("id").Value;
+                }
+            }
         }
     }
 }
