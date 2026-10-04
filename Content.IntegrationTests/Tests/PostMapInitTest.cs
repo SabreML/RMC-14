@@ -1,9 +1,4 @@
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text.RegularExpressions;
 using Content.IntegrationTests.Utility;
-using YamlDotNet.RepresentationModel;
 using Content.Server.Administration.Systems;
 using Content.Server.GameTicking;
 using Content.Server.Maps;
@@ -16,15 +11,20 @@ using Content.Shared.Roles;
 using Content.Shared.Station.Components;
 using Robust.Shared.Configuration;
 using Robust.Shared.ContentPack;
-using Robust.Shared.GameObjects;
-using Robust.Shared.Map;
-using Robust.Shared.Map.Components;
-using Robust.Shared.Prototypes;
 using Robust.Shared.EntitySerialization;
 using Robust.Shared.EntitySerialization.Systems;
+using Robust.Shared.GameObjects;
 using Robust.Shared.IoC;
-using Robust.Shared.Utility;
+using Robust.Shared.Map;
+using Robust.Shared.Map.Components;
 using Robust.Shared.Map.Events;
+using Robust.Shared.Prototypes;
+using Robust.Shared.Utility;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
+using YamlDotNet.RepresentationModel;
 
 namespace Content.IntegrationTests.Tests
 {
@@ -84,9 +84,9 @@ namespace Content.IntegrationTests.Tests
             .ToArray();
 
         // RMC14 Start
+        private static readonly string[] GameMaps = RMCGameMaps("/Prototypes/_RMC14/Maps");
         private static readonly ResPath[] AllMapFiles = GameDataScrounger.FilesInDirectoryInVfs("/Maps/_RMC14", "*.yml");
         private static readonly ResPath[] ShuttleMapFiles = GameDataScrounger.FilesInDirectoryInVfs("/Maps/_RMC14/Shuttles", "*.yml");
-        private static readonly string[] GameMaps = RMCGameMaps().ToArray();
         // RMC14 End
 
         private static readonly ProtoId<EntityCategoryPrototype> DoNotMapCategory = "DoNotMap";
@@ -565,23 +565,33 @@ namespace Content.IntegrationTests.Tests
             return $"^{regex}$";
         }
 
-        private static IEnumerable<string> RMCGameMaps() // RMC14
+        /// <summary>
+        /// Returns an array of the IDs of all <see cref="GameMapPrototype"/>s defined in the <paramref name="mapPrototypesDir"/> directory.
+        /// </summary>
+        /// <remarks>
+        /// There's no way to find out what file a prototype is defined in (afaik), so this is the only way to exclusively include RMC map prototypes.<br/>
+        /// It does mean that any maps defined <i>outside</i> of this directory won't be included in the list, but that shouldn't ever happen per standard practice.
+        /// </remarks>
+        private static string[] RMCGameMaps(string mapPrototypesDir) // RMC14
         {
-            // todo: figure out the "correct" way to do this rather than brute-forcing it
-            foreach (var mapProtoFile in GameDataScrounger.FilesInDirectory("/Prototypes/_RMC14/Maps", "*.yml"))
-            {
-                using var reader = File.OpenText(mapProtoFile);
-                var stream = new YamlStream();
-                stream.Load(reader);
+            var mapProtoIds = new List<string>();
 
-                var sequence = (YamlSequenceNode)stream.Documents[0].RootNode;
-                var mapping = (YamlMappingNode)sequence.Children[0];
-                if (mapping.TryGetNode<YamlScalarNode>("mapPath", out var mapPath)
-                    && AllMapFiles.Any(resPath => resPath.CanonPath == mapPath.Value))
+            foreach (var mapProtoFile in GameDataScrounger.FilesInDirectory(mapPrototypesDir, "*.yml"))
+            {
+                var stream = new YamlStream();
+                using (var reader = File.OpenText(mapProtoFile))
+                    stream.Load(reader);
+
+                if (stream.Documents[0].RootNode is not YamlSequenceNode root)
+                    throw new InvalidDataException($"The map prototype in {mapProtoFile} contains an invalid yaml sequence.");
+
+                foreach (var prototypeDef in root.Children.OfType<YamlMappingNode>())
                 {
-                    yield return mapping.GetNode<YamlScalarNode>("id").Value;
+                    if (prototypeDef.GetNode<YamlScalarNode>("type").Value == "gameMap")
+                        mapProtoIds.Add(prototypeDef.GetNode<YamlScalarNode>("id").Value);
                 }
             }
+            return mapProtoIds.ToArray();
         }
     }
 }
