@@ -7,12 +7,15 @@ using Content.Server.Destructible.Thresholds.Behaviors;
 using Content.Shared.Construction.Prototypes;
 using Content.Shared.Construction.Steps;
 using Robust.Shared.ContentPack;
+using Robust.Shared.EntitySerialization;
 using Robust.Shared.GameObjects;
+using Robust.Shared.Map.Events;
 using Robust.Shared.Prototypes;
+using Robust.Shared.Serialization.Markdown;
+using Robust.Shared.Serialization.Markdown.Mapping;
 using Robust.Shared.Utility;
 using System.Collections.Generic;
 using System.Linq;
-using YamlDotNet.RepresentationModel;
 
 namespace Content.IntegrationTests._RMC14;
 
@@ -22,7 +25,7 @@ public sealed class RMCMaterialTests
     private static readonly ResPath[] RMCMapFiles = GameDataScrounger.FilesInDirectoryInVfs("/Maps/_RMC14", "*.yml");
 
     // Dictionary of entities which shouldn't appear on RMC maps, and the entity which should be used as a replacement (if any).
-    // Todo: Move this to a YAML file somewhere
+    // Todo: Move this to a YAML file?
     private static readonly Dictionary<EntProtoId, EntProtoId?> EntityBlacklist = new()
     {
         { "SheetSteel", "CMSheetMetal" },
@@ -62,26 +65,27 @@ public sealed class RMCMaterialTests
         { "PartRodMetal1", "CMRodMetal1" },
         { "PartRodMetal10", "CMRodMetal10" },
         { "PartRodMetalLingering0", null },
-        { "ShardGlass", "CMShardGlass" },
-        { "ShardGlassReinforced", null },
-        { "ShardGlassPlasma", "CMShardPhoron" },
-        { "GoldOre", "RMCGoldOre" },
-        { "GoldOre1", "RMCGoldOre1" },
-        { "DiamondOre", "RMCDiamondOre" },
-        { "DiamondOre1", "RMCDiamondOre1" },
-        { "SteelOre", "RMCIronOre" },
-        { "SteelOre1", "RMCIronOre1" },
-        { "PlasmaOre", "RMCPlasmaOre" },
-        { "PlasmaOre1", "RMCPlasmaOre1" },
-        { "SilverOre", "RMCSilverOre" },
-        { "SilverOre1", "RMCSilverOre1" },
-        { "UraniumOre", "RMCUraniumOre" },
-        { "UraniumOre1", "RMCUraniumOre1" },
-        { "Coal", "RMCCoal" },
-        { "Coal1", "RMCCoal1" },
-        { "Coal5", null },
-        { "Coal10", null },
-        { "Coal15", null },
+        /* Cosmetic only, so these can all stay for now. */
+        //{ "ShardGlass", "CMShardGlass" },
+        //{ "ShardGlassReinforced", null },
+        //{ "ShardGlassPlasma", "CMShardPhoron" },
+        //{ "GoldOre", "RMCGoldOre" },
+        //{ "GoldOre1", "RMCGoldOre1" },
+        //{ "DiamondOre", "RMCDiamondOre" },
+        //{ "DiamondOre1", "RMCDiamondOre1" },
+        //{ "SteelOre", "RMCIronOre" },
+        //{ "SteelOre1", "RMCIronOre1" },
+        //{ "PlasmaOre", "RMCPlasmaOre" },
+        //{ "PlasmaOre1", "RMCPlasmaOre1" },
+        //{ "SilverOre", "RMCSilverOre" },
+        //{ "SilverOre1", "RMCSilverOre1" },
+        //{ "UraniumOre", "RMCUraniumOre" },
+        //{ "UraniumOre1", "RMCUraniumOre1" },
+        //{ "Coal", "RMCCoal" },
+        //{ "Coal1", "RMCCoal1" },
+        //{ "Coal5", null },
+        //{ "Coal10", null },
+        //{ "Coal15", null },
     };
 
     private static readonly Dictionary<ProtoId<ConstructionGraphPrototype>, HashSet<EntProtoId>> CheckedConstructionGraphs = [];
@@ -102,19 +106,34 @@ public sealed class RMCMaterialTests
         var server = _pair.Server;
 
         var resourceManager = server.ResolveDependency<IResourceManager>();
+        var entSysManager = server.ResolveDependency<IEntitySystemManager>();
         var compFactory = server.ResolveDependency<IComponentFactory>();
 
-        var yamlStream = resourceManager.ContentFileReadYaml(mapFile);
-        var root = (YamlMappingNode)yamlStream.Documents[0].RootNode;
-        var mapEntities = (YamlSequenceNode)root["entities"];
+        MappingDataNode yamlRoot;
+        using (var reader = resourceManager.ContentFileReadText(mapFile))
+        {
+            yamlRoot = (MappingDataNode)DataNodeParser.ParseYamlStream(reader).First().Root;
+        }
 
-        server.Log.Info($"Checking {mapEntities.Count()} entities...");
+        // Pretend that the map is actually being loaded to get map migration data.
+        var ev = new BeforeEntityReadEvent();
+        server.EntMan.EventBus.RaiseEvent(EventSource.Local, ev);
+
+        var deserializer = new EntityDeserializer(
+            entSysManager.DependencyCollection,
+            yamlRoot,
+            DeserializationOptions.Default,
+            ev.RenamedPrototypes,
+            ev.DeletedPrototypes);
+
+        Assert.That(deserializer.TryProcessData(), Is.True, $"Failed to deserialize {mapFile}");
+
+        server.Log.Info($"Checking {deserializer.Prototypes.Count} prototypes...");
         using (Assert.EnterMultipleScope())
         {
-            foreach (var entity in mapEntities.Cast<YamlMappingNode>())
+            foreach (var (protoId, entityData) in deserializer.Prototypes)
             {
-                var protoId = entity.GetNode<YamlScalarNode>("proto").Value!;
-                var occurrences = entity.GetNode<YamlSequenceNode>("entities").Count();
+                var occurrences = entityData.Count;
 
                 if (!server.ProtoMan.TryIndex(protoId, out var proto, false))
                     continue;
