@@ -29,6 +29,8 @@ public sealed class RMCMaterialTests
 
     private TestPair _pair = default!;
 
+    private static readonly Dictionary<ProtoId<ConstructionGraphPrototype>, HashSet<EntProtoId>> CheckedConstructionGraphs = [];
+
     [TearDown]
     public async Task TearDown()
     {
@@ -61,10 +63,10 @@ public sealed class RMCMaterialTests
                     continue;
 
                 foreach (var spawnedEnt in await CheckDestructibleSpawns(proto, compFactory))
-                    Assert.Fail($"The '{proto.ID}' entity ({occurrences} occurrences) spawns a '{spawnedEnt}' when destroyed, which should be inaccessible on RMC.");
+                    Assert.Fail($"(DestructibleComponent) '{proto.ID}' ({occurrences} occurrences) spawns a '{spawnedEnt}' when destroyed, which should be inaccessible on RMC.");
 
                 foreach (var graphMaterial in await CheckConstructionGraph(proto, compFactory))
-                    Assert.Fail($"The '{proto.ID}' entity ({occurrences} occurrences) contains {graphMaterial} in its construction graph, which should be inaccessible on RMC.");
+                    Assert.Fail($"(ConstructionComponent) '{proto.ID}' ({occurrences} occurrences) contains '{graphMaterial}' in its construction graph, which should be inaccessible on RMC.");
             }
         }
     }
@@ -79,36 +81,34 @@ public sealed class RMCMaterialTests
         var spawnedOnDestruction = destructible.Thresholds
             .SelectMany(t => t.Behaviors)
             .OfType<SpawnEntitiesBehavior>()
-            .SelectMany(s => s.Spawn.Keys);
+            .SelectMany(s => s.Spawn.Keys)
+            .Intersect(EntityBlacklist);
 
-        return spawnedOnDestruction.Intersect(EntityBlacklist);
+        return spawnedOnDestruction;
     }
 
-    private async Task<EntProtoId[]> CheckConstructionGraph(EntityPrototype proto, IComponentFactory compFactory)
+    private async Task<IEnumerable<EntProtoId>> CheckConstructionGraph(EntityPrototype proto, IComponentFactory compFactory)
     {
         ConstructionComponent? construction = default!;
         await _pair.Server.WaitPost(() => proto.TryGetComponent(out construction, compFactory));
-        if (construction is null)
+        if (construction?.Graph is not { } graphProtoId)
             return [];
 
-        if (!_pair.Server.ProtoMan.TryIndex<ConstructionGraphPrototype>(construction.Graph, out var graph))
-            return [];
+        // If this graph prototype has already been checked previously.
+        if (CheckedConstructionGraphs.TryGetValue(graphProtoId, out var graphMaterials))
+            return graphMaterials;
 
-        var invalidMaterials = new HashSet<EntProtoId>();
-        foreach (var (_, graphNode) in graph.Nodes)
-        {
-            foreach (var edge in graphNode.Edges)
-            {
-                foreach (var materialStep in edge.Steps.OfType<MaterialConstructionGraphStep>())
-                {
-                    if (!_pair.Server.ProtoMan.TryIndex(materialStep.MaterialPrototypeId, out var material))
-                        continue;
-                    if (EntityBlacklist.Contains(material.Spawn))
-                        invalidMaterials.Add(material.Spawn);
-                }
-            }
-        }
+        var graph = _pair.Server.ProtoMan.Index<ConstructionGraphPrototype>(graphProtoId);
 
-        return invalidMaterials.ToArray();
+        var invalidMaterials = graph.Nodes.Values
+            .SelectMany(node => node.Edges)
+            .SelectMany(edge => edge.Steps)
+            .OfType<MaterialConstructionGraphStep>()
+            .Select(step => _pair.Server.ProtoMan.Index(step.MaterialPrototypeId).Spawn)
+            .Where(proto => EntityBlacklist.Contains(proto))
+            .ToHashSet();
+
+        CheckedConstructionGraphs.Add(graphProtoId, invalidMaterials);
+        return invalidMaterials;
     }
 }
