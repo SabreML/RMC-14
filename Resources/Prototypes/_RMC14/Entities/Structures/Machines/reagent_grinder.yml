@@ -25,6 +25,8 @@
     idleLoad: 5
     activeLoad: 100
     channel: Equipment
+  - type: Construction
+    graph: CMMachineFrame
   - type: InteractedBlacklist
     blacklist:
       components:

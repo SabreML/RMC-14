@@ -35,6 +35,8 @@
       visible: false
   - type: Machine
     board: CMCircuitboardMicrowave
+  - type: Construction
+    graph: CMMachineFrame
   - type: InteractedBlacklist
     blacklist:
       components:

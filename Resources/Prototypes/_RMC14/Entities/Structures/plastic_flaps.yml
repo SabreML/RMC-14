@@ -1,0 +1,15 @@
+- type: entity
+  parent: PlasticFlapsClear
+  id: RMCPlasticFlapsClear
+  suffix: Clear, RMC
+  components:
+  - type: Construction
+    graph: RMCPlasticFlapsGraph
+
+- type: entity
+  parent: PlasticFlapsOpaque
+  id: RMCPlasticFlapsOpaque
+  suffix: Opaque, RMC
+  components:
+  - type: Construction
+    graph: RMCPlasticFlapsGraph

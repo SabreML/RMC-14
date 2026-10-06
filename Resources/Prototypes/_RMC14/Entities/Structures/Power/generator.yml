@@ -129,7 +129,7 @@
 - type: entity
   abstract: true
   id: RMCPortableGeneratorBase # TODO RMC14 - Functionality
-  parent: [ BaseMachine, SmallConstructibleMachine, StructureWheeled]
+  parent: [ BaseMachine, RMCSmallConstructibleMachine, StructureWheeled]
   components:
     - type: GuideHelp
       guides:

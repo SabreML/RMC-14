@@ -51,10 +51,10 @@
                 collection: MetalBreak
             - !type:SpawnEntitiesBehavior
               spawn:
-                SheetSteel:
+                CMSheetMetal: # RMC14
                   min: 2
                   max: 2
-                SheetGlass:
+                CMSheetGlass: # RMC14
                   min: 2
                   max: 2
     - type: StaticPrice

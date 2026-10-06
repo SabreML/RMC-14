@@ -1,0 +1,7 @@
+- type: entity
+  parent: SeedExtractor
+  id: RMCSeedExtractor
+  suffix: RMC
+  components:
+  - type: Construction
+    graph: CMMachineFrame

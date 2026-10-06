@@ -1,0 +1,27 @@
+- type: constructionGraph
+  parent: RMC
+  id: RMCBookshelf
+  start: start
+  graph:
+    - node: start
+      actions:
+        - !type:DestroyEntity {}
+      edges:
+        - to: bookshelf
+          completed:
+            - !type:SnapToGrid { }
+          steps:
+            - material: RMCWood
+              amount: 5
+              doAfter: 4
+    - node: bookshelf
+      entity: Bookshelf
+      edges:
+        - to: start
+          completed:
+            - !type:SpawnPrototype
+              prototype: RMCPlankWood
+              amount: 5
+          steps:
+            - tool: Prying
+              doAfter: 4

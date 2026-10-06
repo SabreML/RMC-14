@@ -1,0 +1,95 @@
+- type: entity
+  parent: DisposalPipeBroken
+  id: RMCDisposalPipeBroken
+  suffix: RMC
+  components:
+  - type: Construction
+    graph: RMCDisposalPipe
+
+- type: entity
+  parent: DisposalPipe
+  id: RMCDisposalPipe
+  suffix: RMC
+  components:
+  - type: Construction
+    graph: RMCDisposalPipe
+
+- type: entity
+  parent: DisposalTagger
+  id: RMCDisposalTagger
+  suffix: RMC
+  components:
+  - type: Construction
+    graph: RMCDisposalPipe
+
+- type: entity
+  parent: DisposalSignaller
+  id: RMCDisposalSignaller
+  suffix: RMC
+  components:
+  - type: Construction
+    graph: RMCDisposalPipe
+
+- type: entity
+  parent: DisposalTrunk
+  id: RMCDisposalTrunk
+  suffix: RMC
+  components:
+  - type: Construction
+    graph: RMCDisposalPipe
+
+- type: entity
+  parent: DisposalRouter
+  id: RMCDisposalRouter
+  suffix: RMC
+  components:
+  - type: Construction
+    graph: RMCDisposalPipe
+
+- type: entity
+  parent: DisposalJunction
+  id: RMCDisposalJunction
+  suffix: RMC
+  components:
+  - type: Construction
+    graph: RMCDisposalPipe
+
+- type: entity
+  parent: DisposalJunctionFlipped
+  id: RMCDisposalJunctionFlipped
+  suffix: RMC
+  components:
+  - type: Construction
+    graph: RMCDisposalPipe
+
+- type: entity
+  parent: DisposalYJunction
+  id: RMCDisposalYJunction
+  suffix: RMC
+  components:
+  - type: Construction
+    graph: RMCDisposalPipe
+
+- type: entity
+  parent: DisposalXJunction
+  id: RMCDisposalXJunction
+  suffix: RMC
+  components:
+  - type: Construction
+    graph: RMCDisposalPipe
+
+- type: entity
+  parent: DisposalBend
+  id: RMCDisposalBend
+  suffix: RMC
+  components:
+  - type: Construction
+    graph: RMCDisposalPipe
+
+- type: entity
+  parent: DisposalSignalRouter
+  id: RMCDisposalSignalRouter
+  suffix: RMC
+  components:
+  - type: Construction
+    graph: RMCDisposalPipe

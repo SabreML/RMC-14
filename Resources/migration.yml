@@ -1544,3 +1544,24 @@ RMCSpawnPointSurvivorFiorinaRiotInProgressCMBRiotControlOfficer: RMCSpawnPointSu
 
 # 2026-08-26
 CMAttachmentXMVESG1FlamerNozzle: RMCAttachmentXMVESG1FlamerNozzle
+
+# 2026-10-06
+KitchenMicrowave: CMMicrowave
+KitchenSpike: RMCKitchenSpike
+DisposalPipeBroken: RMCDisposalPipeBroken
+DisposalPipe: RMCDisposalPipe
+DisposalTagger: RMCDisposalTagger
+DisposalSignaller: RMCDisposalSignaller
+DisposalTrunk: RMCDisposalTrunk
+DisposalRouter: RMCDisposalRouter
+DisposalJunction: RMCDisposalJunction
+DisposalJunctionFlipped: RMCDisposalJunctionFlipped
+DisposalYJunction: RMCDisposalYJunction
+DisposalXJunction: RMCDisposalXJunction
+DisposalBend: RMCDisposalBend
+DisposalSignalRouter: RMCDisposalSignalRouter
+ChairOfficeDark: CMChairOfficeDark
+PlasticFlapsClear: RMCPlasticFlapsClear
+PlasticFlapsOpaque: RMCPlasticFlapsOpaque
+TableReinforced: CMTableReinforced
+SeedExtractor: RMCSeedExtractor

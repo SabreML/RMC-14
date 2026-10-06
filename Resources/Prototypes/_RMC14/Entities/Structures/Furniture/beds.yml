@@ -167,7 +167,7 @@
     sprite: _RMC14/Structures/Furniture/bed.rsi
     state: bunk_brown
   - type: Construction
-  
+
 # Bedroll
 
 - type: entity
@@ -221,7 +221,7 @@
     position: Down
     rotation: -90
   - type: Construction
-    graph: bed
+    graph: RMCBed
     node: bed
   - type: Appearance
   - type: GenericVisualizer

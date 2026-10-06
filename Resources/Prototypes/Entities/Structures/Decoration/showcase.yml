@@ -26,7 +26,7 @@
                 collection: MetalBreak
             - !type:SpawnEntitiesBehavior
               spawn:
-                PartRodMetal1:
+                CMRodMetal1: # RMC14
                   min: 5
                   max: 10
             - !type:DoActsBehavior

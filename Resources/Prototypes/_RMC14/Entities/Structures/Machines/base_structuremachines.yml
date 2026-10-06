@@ -16,3 +16,9 @@
   - type: LightningTarget
     priority: 1
 
+- type: entity
+  abstract: true
+  parent: RMCConstructibleMachine
+  id: RMCSmallConstructibleMachine
+  components:
+    - type: RequireProjectileTarget

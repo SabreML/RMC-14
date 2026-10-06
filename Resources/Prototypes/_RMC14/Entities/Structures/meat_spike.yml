@@ -1,0 +1,7 @@
+- type: entity
+  parent: KitchenSpike
+  id: RMCKitchenSpike
+  suffix: RMC
+  components:
+  - type: Construction
+    graph: RMCMeatSpike

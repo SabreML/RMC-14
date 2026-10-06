@@ -122,6 +122,7 @@
   parent: CMTable
   id: CMTableReinforced
   name: reinforced table
+  suffix: RMC
   description: A square metal surface resting on four legs. This one has side panels, making it useful as a desk.
   components:
   - type: Sprite
