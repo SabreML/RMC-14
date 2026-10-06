@@ -27,6 +27,10 @@ public sealed class RMCMaterialTests
 {
     private static readonly ResPath[] RMCMapFiles = GameDataScrounger.FilesInDirectoryInVfs("/Maps/_RMC14", "*.yml");
 
+    private static readonly ResPath[] ExcludedMaps = [
+        new ResPath("/Maps/_RMC14/Test/dev_map.yml")
+    ];
+
     // Dictionary of prototypes which shouldn't appear on RMC maps, and the prototype that should be used as a replacement (if any).
     // Todo: Move this to a YAML file?
     private static readonly Dictionary<ProtoId<IPrototype>, ProtoId<IPrototype>?> PrototypeBlacklist = new()
@@ -43,6 +47,7 @@ public sealed class RMCMaterialTests
         { "Cardboard", "RMCSheetCardboard" },
         { "WoodPlank", "RMCWood" },
         { "MetalRod", "CMRodMetal" },
+
         // EntProtoId:
         { "SheetSteel", "CMSheetMetal" },
         { "SheetSteel1", "CMSheetMetal1" },
@@ -112,15 +117,46 @@ public sealed class RMCMaterialTests
     [TearDown]
     public async Task TearDown()
     {
-        await _pair.CleanReturnAsync();
+        if (_pair is not null) // May be null if a map is skipped prior to the pair being created
+            await _pair.CleanReturnAsync();
     }
 
-    // todo: separate test going through every prototype for entries in the openable construction menu, and running the same entity checks
+    // Note (todo remove later): 102 prototypes currently flagged by the test
+
+    [Test]
+    public async Task CheckConstructionMenuForNonRMCPrototypes()
+    {
+        _pair = await PoolManager.GetServerClient();
+        var server = _pair.Server;
+
+        var constructionSys = server.System<ConstructionSystem>();
+
+        using (Assert.EnterMultipleScope())
+        {
+            foreach (var recipe in server.ProtoMan.EnumeratePrototypes<ConstructionPrototype>())
+            {
+                if (!recipe.IsCM)
+                    continue;
+
+                foreach (var blacklisted in CheckConstructionNodeEdges(recipe.StartNode, recipe.Graph, constructionSys))
+                {
+                    var message = $"Construction menu prototype '{recipe.ID}' contains '{blacklisted}' in its construction graph ('{recipe.Graph}'), which should be inaccessible on RMC.";
+                    if (PrototypeBlacklist[blacklisted] is { } suggestedReplacement)
+                        message += $" (Try using '{suggestedReplacement}' instead)";
+
+                    Assert.Fail(message);
+                }
+            }
+        }
+    }
 
     [Test]
     [TestCaseSource(nameof(RMCMapFiles))]
     public async Task CheckMapsForNonRMCPrototypes(ResPath mapFile)
     {
+        if (ExcludedMaps.Contains(mapFile))
+            Assert.Ignore("Map is in the excluded list, skipping...");
+
         _pair = await PoolManager.GetServerClient();
         var server = _pair.Server;
 
@@ -170,9 +206,10 @@ public sealed class RMCMaterialTests
                 {
                     foreach (var blacklisted in CheckDestructibleSpawns(destructibleComp))
                     {
-                        var message = $"(DestructibleComponent) '{protoId}' ({entityData.Count} occurrences) spawns a '{blacklisted}' when destroyed, which should be inaccessible on RMC.";
+                        var message = $"(DestructibleComponent) '{protoId}' ({entityData.Count} occurrences) spawns a '{blacklisted}' when destroyed, " +
+                                      $"which should be inaccessible on RMC.";
                         if (PrototypeBlacklist[blacklisted] is { } suggestedReplacement)
-                            message += $" (Try using '{suggestedReplacement}')";
+                            message += $" (Try using '{suggestedReplacement}' instead)";
 
                         Assert.Fail(message);
                     }
@@ -181,12 +218,12 @@ public sealed class RMCMaterialTests
                 // Check `ConstructionComponent` graphs for blacklisted prototypes, either used in construction or dropped by deconstruction.
                 if (constructionComp is not null)
                 {
-                    foreach (var blacklisted in CheckConstructionNodeEdges(constructionComp, constructionSys))
+                    foreach (var blacklisted in CheckConstructionNodeEdges(constructionComp.Node, constructionComp.Graph, constructionSys))
                     {
                         var message = $"(ConstructionComponent) '{protoId}' ({entityData.Count} occurrences) contains '{blacklisted}' in " +
-                                            $"its construction graph ('{constructionComp.Graph}'), which should be inaccessible on RMC.";
+                                      $"its construction graph ('{constructionComp.Graph}'), which should be inaccessible on RMC.";
                         if (PrototypeBlacklist[blacklisted] is { } suggestedReplacement)
-                            message += $" (Try using '{suggestedReplacement}')";
+                            message += $" (Try using '{suggestedReplacement}' instead)";
 
                         Assert.Fail(message);
                     }
@@ -207,16 +244,16 @@ public sealed class RMCMaterialTests
         return spawnedOnDestruction;
     }
 
-    private HashSet<ProtoId<IPrototype>> CheckConstructionNodeEdges(ConstructionComponent constructionComp, ConstructionSystem constructionSys)
+    private HashSet<ProtoId<IPrototype>> CheckConstructionNodeEdges(string nodeName, ProtoId<ConstructionGraphPrototype> graphId, ConstructionSystem constructionSys)
     {
         // Check if this specific node in the graph has already been parsed previously. If so, just return the cached ProtoIds from that.
-        var identifierString = $"{constructionComp.Graph}-{constructionComp.Node}";
+        var identifierString = $"{graphId}-{nodeName}";
         if (CheckedConstructionNodes.TryGetValue(identifierString, out var nodePrototypes))
             return nodePrototypes;
 
         // Get the overall construction graph and the entity's current "node" in that graph.
-        var graph = _pair.Server.ProtoMan.Index<ConstructionGraphPrototype>(constructionComp.Graph);
-        var startingNode = constructionSys.GetNodeFromGraph(graph, constructionComp.Node);
+        var graph = _pair.Server.ProtoMan.Index(graphId);
+        var startingNode = constructionSys.GetNodeFromGraph(graph, nodeName);
         Assert.That(startingNode, Is.Not.Null); // Should never be the case but may as well check.
 
         var blacklistedPrototypes = new HashSet<ProtoId<IPrototype>>();
